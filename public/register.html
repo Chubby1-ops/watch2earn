@@ -29,12 +29,14 @@
       <div id="err" class="error"></div>
     </div>
     <script>
+      const BACKEND_URL = "https://watch2earn-d9im.onrender.com";
       f.onsubmit = async (x) => {
         x.preventDefault();
         err.textContent = "";
         try {
           let r = await fetch("/api/auth/register", {
               method: "POST",
+              credentials:"include"
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 name: n.value,
