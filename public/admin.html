@@ -1,0 +1,160 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Watchsave Admin</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="logo" href="/">WATCH<span>SAVE</span></a>
+      <nav><a href="/">View site</a></nav>
+      <button id="logout" class="ghost">Logout</button>
+    </header>
+    <main class="admin">
+      <div class="admin-head">
+        <div>
+          <div class="eyebrow">CONTROL CENTER</div>
+          <h1>Watchsave Admin</h1>
+          <p>Videos, rewards, tasks, users and withdrawals.</p>
+        </div>
+        <div class="online">● <b id="topOnline">0</b> users online</div>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="dash">Dashboard</button
+        ><button class="tab" data-tab="vids">Videos</button
+        ><button class="tab" data-tab="users">Users</button
+        ><button class="tab" data-tab="wd">Withdrawals</button
+        ><button class="tab" data-tab="chats">Chats</button>
+      </div>
+      <section id="dash" class="pane active">
+        <div class="stats">
+          <div><small>REGISTERED</small><b id="su">0</b></div>
+          <div><small>ONLINE</small><b id="so">0</b></div>
+          <div><small>LIVE VIDEOS</small><b id="sv">0</b></div>
+          <div><small>PENDING PAYOUTS</small><b id="sp">0</b></div>
+        </div>
+        <div class="notice">
+          Passwords are never displayed in the admin panel. You can see
+          registration/contact/activity information and remove an account.
+        </div>
+      </section>
+      <section id="vids" class="pane">
+        <div class="forms">
+          <div class="admin-card">
+            <h2>Add social / website URL</h2>
+            <p>
+              Works with TikTok, YouTube, Facebook, Instagram and other
+              HTTP/HTTPS URLs. Some sites block embedding, so the user gets an
+              open-video button instead.
+            </p>
+            <form id="urlForm">
+              <input name="title" placeholder="Video title" required /><textarea
+                name="description"
+                placeholder="Description"
+              ></textarea
+              ><input name="source" placeholder="https://..." required />
+              <div class="two">
+                <label
+                  >Reward ₦<input
+                    name="reward"
+                    type="number"
+                    min="0"
+                    value="50" /></label
+                ><label
+                  >Duration seconds<input
+                    name="duration"
+                    type="number"
+                    min="5"
+                    value="30"
+                /></label>
+              </div>
+              <textarea
+                name="command"
+                placeholder="Command / task: Follow @yourpage on TikTok, then watch the video."
+              ></textarea
+              ><button class="primary">Publish URL video</button>
+            </form>
+          </div>
+          <div class="admin-card">
+            <h2>Upload your own video</h2>
+            <p>
+              MP4, WebM, OGG, MOV or M4V. Maximum 250 MB in this local build.
+            </p>
+            <form id="uploadForm" enctype="multipart/form-data">
+              <input name="title" placeholder="Video title" /><textarea
+                name="description"
+                placeholder="Description"
+              ></textarea
+              ><input name="video" type="file" accept="video/*" required />
+              <div class="two">
+                <label
+                  >Reward ₦<input
+                    name="reward"
+                    type="number"
+                    min="0"
+                    value="50" /></label
+                ><label
+                  >Duration seconds<input
+                    name="duration"
+                    type="number"
+                    min="5"
+                    value="30"
+                /></label>
+              </div>
+              <textarea
+                name="command"
+                placeholder="Command / task for viewers"
+              ></textarea
+              ><button class="primary">Upload & publish</button>
+            </form>
+          </div>
+        </div>
+        <div class="admin-card">
+          <h2>Video library</h2>
+          <p>Edit the reward and duration for any video.</p>
+          <div id="videoList"></div>
+        </div>
+      </section>
+      <section id="users" class="pane">
+        <div class="admin-card">
+          <div class="rowhead">
+            <div>
+              <h2>Users</h2>
+              <p>
+                New registrations appear here. Online status refreshes
+                automatically.
+              </p>
+            </div>
+            <button id="refreshUsers" class="ghost">↻ Refresh</button>
+          </div>
+          <div id="usersList"></div>
+        </div>
+      </section>
+      <section id="wd" class="pane">
+        <div class="admin-card">
+          <h2>Withdrawal requests</h2>
+          <div id="wdList"></div>
+        </div>
+      </section>
+      <section id="chats" class="pane">
+        <div class="admin-card">
+          <div class="rowhead">
+            <div>
+              <h2>Private user chats</h2>
+              <p>
+                Only you can send messages from this area. Each chat belongs to
+                one user.
+              </p>
+            </div>
+            <button id="refreshChats" class="ghost">↻ Refresh</button>
+          </div>
+          <div id="chatList" class="chat-list"></div>
+        </div>
+      </section>
+    </main>
+    <div id="toast" class="toast"></div>
+    <script src="/js/admin.js"></script>
+  </body>
+</html>

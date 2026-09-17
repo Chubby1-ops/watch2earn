@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Join Watchsave</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body class="auth">
+    <div class="auth-card">
+      <a class="logo" href="/">WATCH<span>SAVE</span></a>
+      <div class="eyebrow">JOIN WATCHSAVE</div>
+      <h1>Create your account.</h1>
+      <form id="f">
+        <label>Name<input id="n" required /></label
+        ><label>Email<input id="e" type="email" required /></label
+        ><label>Phone <small>(optional)</small><input id="ph" /></label
+        ><label
+          >Password<input
+            id="p"
+            type="password"
+            minlength="6"
+            required /></label
+        ><button class="primary">Create account</button>
+      </form>
+      <div class="switch">
+        Already registered? <a href="/login.html">Log in</a>
+      </div>
+      <div id="err" class="error"></div>
+    </div>
+    <script>
+      f.onsubmit = async (x) => {
+        x.preventDefault();
+        err.textContent = "";
+        try {
+          let r = await fetch("/api/auth/register", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: n.value,
+                email: e.value,
+                phone: ph.value,
+                password: p.value,
+              }),
+            }),
+            d = await r.json();
+          if (!r.ok) throw Error(d.error);
+          location = "/";
+        } catch (q) {
+          err.textContent = q.message;
+        }
+      };
+    </script>
+  </body>
+</html>
