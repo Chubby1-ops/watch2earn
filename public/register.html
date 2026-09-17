@@ -6,50 +6,100 @@
     <title>Join Watchsave</title>
     <link rel="stylesheet" href="./css/style.css" />
   </head>
+
   <body class="auth">
     <div class="auth-card">
-      <a class="logo" href="/">WATCH<span>SAVE</span></a>
+      <a class="logo" href="./index.html">WATCH<span>SAVE</span></a>
+
       <div class="eyebrow">JOIN WATCHSAVE</div>
+
       <h1>Create your account.</h1>
+
       <form id="f">
-        <label>Name<input id="n" required /></label
-        ><label>Email<input id="e" type="email" required /></label
-        ><label>Phone <small>(optional)</small><input id="ph" /></label
-        ><label
-          >Password<input
+        <label>
+          Name
+          <input id="n" required />
+        </label>
+
+        <label>
+          Email
+          <input id="e" type="email" required />
+        </label>
+
+        <label>
+          Phone <small>(optional)</small>
+          <input id="ph" />
+        </label>
+
+        <label>
+          Password
+          <input
             id="p"
             type="password"
             minlength="6"
-            required /></label
-        ><button class="primary">Create account</button>
+            required
+          />
+        </label>
+
+        <button class="primary">Create account</button>
       </form>
+
       <div class="switch">
-        Already registered? <a href="./login.html">Log in</a>
+        Already registered?
+        <a href="./login.html">Log in</a>
       </div>
+
       <div id="err" class="error"></div>
     </div>
+
     <script>
-      const BACKEND_URL = "https://watch2earn-d9im.onrender.com";
-      f.onsubmit = async (x) => {
+      const BACKEND_URL =
+        "https://watch2earn-d9im.onrender.com";
+
+      const form = document.getElementById("f");
+      const nameInput = document.getElementById("n");
+      const emailInput = document.getElementById("e");
+      const phoneInput = document.getElementById("ph");
+      const passwordInput = document.getElementById("p");
+      const error = document.getElementById("err");
+
+      form.onsubmit = async (x) => {
         x.preventDefault();
-        err.textContent = "";
+        error.textContent = "";
+
         try {
-          let r = await fetch("/api/auth/register", {
+          const r = await fetch(
+            BACKEND_URL + "/api/auth/register",
+            {
               method: "POST",
-              credentials:"include"
-              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              headers: {
+                "Content-Type": "application/json"
+              },
               body: JSON.stringify({
-                name: n.value,
-                email: e.value,
-                phone: ph.value,
-                password: p.value,
-              }),
-            }),
-            d = await r.json();
-          if (!r.ok) throw Error(d.error);
-          location = "/";
+                name: nameInput.value,
+                email: emailInput.value,
+                phone: phoneInput.value,
+                password: passwordInput.value
+              })
+            }
+          );
+
+          const d = await r.json().catch(() => ({}));
+
+          if (!r.ok) {
+            throw new Error(
+              d.error || "Registration failed"
+            );
+          }
+
+          // Registration succeeded.
+          // Send the new user to the main website.
+          location.href = "./index.html";
+
         } catch (q) {
-          err.textContent = q.message;
+          error.textContent =
+            q.message || "Something went wrong";
         }
       };
     </script>
