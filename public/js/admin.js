@@ -1,4 +1,4 @@
-const BACKEND_URL = "YOUR_BACKEND_URL";
+const BACKEND_URL = "https://watch2earn-d9im.onrender.com";
 
 const $ = (s) =>
   document.querySelector(s);
