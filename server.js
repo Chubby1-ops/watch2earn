@@ -10,6 +10,8 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
+const pool = require("./database");
+
 const app = express();
 
 const PORT = Number(process.env.PORT || 3000);
@@ -38,32 +40,14 @@ const SESSION_MAX_AGE =
 
 
 /* =========================
-   STORAGE
+   DIRECTORIES
 ========================= */
-
-/*
-  IMPORTANT:
-  Use the local project directory on Render.
-  This prevents the EACCES error caused by
-  trying to create /var/data without a
-  Render Persistent Disk mounted.
-*/
 
 const PERSISTENT_DIR =
   path.join(__dirname, "data");
 
-const DATA_DIR =
-  path.join(PERSISTENT_DIR, "db");
-
-const DATA_FILE =
-  path.join(DATA_DIR, "watchsave-data.json");
-
 const UPLOAD_DIR =
   path.join(PERSISTENT_DIR, "uploads");
-
-fs.mkdirSync(DATA_DIR, {
-  recursive: true,
-});
 
 fs.mkdirSync(UPLOAD_DIR, {
   recursive: true,
@@ -82,89 +66,19 @@ const now = () =>
 
 
 /* =========================
-   DATABASE
-========================= */
-
-function load() {
-  try {
-    const d = JSON.parse(
-      fs.readFileSync(
-        DATA_FILE,
-        "utf8"
-      )
-    );
-
-    d.users ??= [];
-    d.videos ??= [];
-    d.withdrawals ??= [];
-    d.sessions ??= [];
-    d.chats ??= [];
-
-    return d;
-  } catch {
-    return {
-      users: [],
-      videos: [],
-      withdrawals: [],
-      sessions: [],
-      chats: [],
-    };
-  }
-}
-
-let db = load();
-
-function save() {
-  const tempFile =
-    DATA_FILE + ".tmp";
-
-  fs.writeFileSync(
-    tempFile,
-    JSON.stringify(
-      db,
-      null,
-      2
-    )
-  );
-
-  fs.renameSync(
-    tempFile,
-    DATA_FILE
-  );
-}
-
-
-/* =========================
    SESSION CLEANUP
 ========================= */
 
-function clean() {
-  const before =
-    db.sessions.length;
-
-  db.sessions =
-    db.sessions.filter(
-      (s) => {
-        const created =
-          new Date(
-            s.createdAt ||
-              s.lastSeen ||
-              0
-          ).getTime();
-
-        return (
-          Number.isFinite(created) &&
-          Date.now() - created <
-            SESSION_MAX_AGE
-        );
-      }
+async function clean() {
+  try {
+    await pool.query(
+      `
+      DELETE FROM sessions
+      WHERE created_at < NOW() - INTERVAL '30 days'
+      `
     );
-
-  if (
-    db.sessions.length !==
-    before
-  ) {
-    save();
+  } catch (err) {
+    console.error("SESSION CLEANUP ERROR:", err);
   }
 }
 
@@ -173,44 +87,79 @@ function clean() {
    ADMIN
 ========================= */
 
-function ensureAdmin() {
-  const u =
-    db.users.find(
-      (x) =>
-        x.email ===
-        ADMIN_EMAIL
+async function ensureAdmin() {
+  const existing =
+    await pool.query(
+      `
+      SELECT *
+      FROM users
+      WHERE LOWER(email) = $1
+      LIMIT 1
+      `,
+      [ADMIN_EMAIL]
     );
 
-  const h =
-    bcrypt.hashSync(
+  const passwordHash =
+    await bcrypt.hash(
       ADMIN_PASSWORD,
       12
     );
 
-  if (!u) {
-    db.users.push({
-      id: uid("usr"),
-      name: "Watchsave Admin",
-      email: ADMIN_EMAIL,
-      phone: "",
-      passwordHash: h,
-      balance: 0,
-      isAdmin: true,
-      deleted: false,
-      joinedAt: now(),
-      lastLoginAt: null,
-      lastSeen: null,
-    });
+  if (existing.rows.length === 0) {
+    await pool.query(
+      `
+      INSERT INTO users (
+        id,
+        name,
+        email,
+        phone,
+        password_hash,
+        balance,
+        is_admin,
+        deleted,
+        joined_at,
+        last_login_at,
+        last_seen
+      )
+      VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
+      )
+      `,
+      [
+        uid("usr"),
+        "Watchsave Admin",
+        ADMIN_EMAIL,
+        "",
+        passwordHash,
+        0,
+        true,
+        false,
+        now(),
+        null,
+        null,
+      ]
+    );
 
-    save();
-  } else if (!u.isAdmin) {
-    u.isAdmin = true;
-    u.passwordHash = h;
-    save();
+    console.log("✅ Admin account created.");
+  } else {
+    await pool.query(
+      `
+      UPDATE users
+      SET
+        is_admin = TRUE,
+        password_hash = $1,
+        deleted = FALSE
+      WHERE LOWER(email) = $2
+      `,
+      [
+        passwordHash,
+        ADMIN_EMAIL,
+      ]
+    );
+
+    console.log("✅ Admin account verified.");
   }
 }
-
-ensureAdmin();
 
 
 /* =========================
@@ -283,9 +232,7 @@ app.use(
   })
 );
 
-app.use(
-  cookieParser()
-);
+app.use(cookieParser());
 
 
 /* =========================
@@ -339,9 +286,7 @@ app.use(
       req.method ===
       "OPTIONS"
     ) {
-      return res.sendStatus(
-        204
-      );
+      return res.sendStatus(204);
     }
 
     next();
@@ -405,7 +350,7 @@ function getAuthToken(req) {
   );
 }
 
-function current(req) {
+async function current(req) {
   const t =
     getAuthToken(req);
 
@@ -420,67 +365,111 @@ function current(req) {
         JWT_SECRET
       );
 
-    const session =
-      db.sessions.find(
-        (s) =>
-          s.id ===
-            payload.sid &&
-          s.userId ===
-            payload.uid
-      );
-
-    const user =
-      db.users.find(
-        (u) =>
-          u.id ===
-          payload.uid
+    const result =
+      await pool.query(
+        `
+        SELECT
+          u.*,
+          s.id AS session_id,
+          s.created_at AS session_created_at
+        FROM sessions s
+        JOIN users u
+          ON u.id = s.user_id
+        WHERE
+          s.id = $1
+          AND s.user_id = $2
+          AND u.deleted = FALSE
+        LIMIT 1
+        `,
+        [
+          payload.sid,
+          payload.uid,
+        ]
       );
 
     if (
-      !session ||
-      !user ||
-      user.deleted
+      result.rows.length === 0
     ) {
       return null;
     }
 
+    const row =
+      result.rows[0];
+
     const created =
       new Date(
-        session.createdAt ||
-          session.lastSeen ||
-          0
+        row.session_created_at
       ).getTime();
 
     if (
-      !Number.isFinite(
-        created
-      ) ||
+      !Number.isFinite(created) ||
       Date.now() -
         created >=
         SESSION_MAX_AGE
     ) {
+      await pool.query(
+        `
+        DELETE FROM sessions
+        WHERE id = $1
+        `,
+        [payload.sid]
+      );
+
       return null;
     }
 
-    session.lastSeen =
+    const timestamp =
       now();
 
-    user.lastSeen =
-      session.lastSeen;
+    await pool.query(
+      `
+      UPDATE sessions
+      SET last_seen = $1
+      WHERE id = $2
+      `,
+      [
+        timestamp,
+        payload.sid,
+      ]
+    );
 
-    return user;
+    await pool.query(
+      `
+      UPDATE users
+      SET last_seen = $1
+      WHERE id = $2
+      `,
+      [
+        timestamp,
+        row.id,
+      ]
+    );
+
+    return {
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      phone: row.phone || "",
+      balance: Number(row.balance || 0),
+      isAdmin: !!row.is_admin,
+      deleted: !!row.deleted,
+      joinedAt: row.joined_at,
+      lastLoginAt: row.last_login_at,
+      lastSeen: timestamp,
+      passwordHash: row.password_hash,
+    };
   } catch {
     return null;
   }
 }
 
-function auth(
+async function auth(
   req,
   res,
   next
 ) {
   const u =
-    current(req);
+    await current(req);
 
   if (!u) {
     return res
@@ -537,11 +526,29 @@ const pub = (u) => ({
 
 app.get(
   "/api/health",
-  (_, res) =>
-    res.json({
-      ok: true,
-      time: now(),
-    })
+  async (_, res) => {
+    try {
+      await pool.query(
+        "SELECT 1"
+      );
+
+      res.json({
+        ok: true,
+        time: now(),
+        database: "postgresql",
+      });
+    } catch (err) {
+      console.error(
+        "HEALTH ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        ok: false,
+        database: "error",
+      });
+    }
+  }
 );
 
 
@@ -617,13 +624,20 @@ app.post(
           });
       }
 
+      const existing =
+        await pool.query(
+          `
+          SELECT id
+          FROM users
+          WHERE LOWER(email) = $1
+          AND deleted = FALSE
+          LIMIT 1
+          `,
+          [email]
+        );
+
       if (
-        db.users.some(
-          (u) =>
-            u.email ===
-              email &&
-            !u.deleted
-        )
+        existing.rows.length
       ) {
         return res
           .status(409)
@@ -636,48 +650,83 @@ app.post(
       const timestamp =
         now();
 
-      const u = {
-        id: uid("usr"),
-        name,
-        email,
-        phone,
+      const id =
+        uid("usr");
 
-        passwordHash:
-          await bcrypt.hash(
-            password,
-            12
-          ),
-
-        balance: 0,
-        isAdmin: false,
-        deleted: false,
-
-        joinedAt:
-          timestamp,
-
-        lastLoginAt:
-          timestamp,
-
-        lastSeen:
-          timestamp,
-      };
+      const passwordHash =
+        await bcrypt.hash(
+          password,
+          12
+        );
 
       const sid =
         uid("ses");
 
-      db.users.push(u);
-
-      db.sessions.push({
-        id: sid,
-        userId: u.id,
-        createdAt:
+      await pool.query(
+        `
+        INSERT INTO users (
+          id,
+          name,
+          email,
+          phone,
+          password_hash,
+          balance,
+          is_admin,
+          deleted,
+          joined_at,
+          last_login_at,
+          last_seen
+        )
+        VALUES (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
+        )
+        `,
+        [
+          id,
+          name,
+          email,
+          phone,
+          passwordHash,
+          0,
+          false,
+          false,
           timestamp,
-        lastSeen:
           timestamp,
-      });
+          timestamp,
+        ]
+      );
 
-      clean();
-      save();
+      await pool.query(
+        `
+        INSERT INTO sessions (
+          id,
+          user_id,
+          created_at,
+          last_seen
+        )
+        VALUES ($1,$2,$3,$4)
+        `,
+        [
+          sid,
+          id,
+          timestamp,
+          timestamp,
+        ]
+      );
+
+      await clean();
+
+      const u = {
+        id,
+        name,
+        email,
+        phone,
+        balance: 0,
+        isAdmin: false,
+        joinedAt: timestamp,
+        lastLoginAt: timestamp,
+        lastSeen: timestamp,
+      };
 
       const accessToken =
         token(u, sid);
@@ -757,15 +806,21 @@ app.post(
           });
       }
 
-      const u =
-        db.users.find(
-          (x) =>
-            x.email ===
-              email &&
-            !x.deleted
+      const result =
+        await pool.query(
+          `
+          SELECT *
+          FROM users
+          WHERE LOWER(email) = $1
+          AND deleted = FALSE
+          LIMIT 1
+          `,
+          [email]
         );
 
-      if (!u) {
+      if (
+        result.rows.length === 0
+      ) {
         return res
           .status(401)
           .json({
@@ -774,10 +829,13 @@ app.post(
           });
       }
 
+      const row =
+        result.rows[0];
+
       const passwordOk =
         await bcrypt.compare(
           password,
-          u.passwordHash
+          row.password_hash
         );
 
       if (!passwordOk) {
@@ -792,26 +850,54 @@ app.post(
       const timestamp =
         now();
 
-      u.lastLoginAt =
-        timestamp;
-
-      u.lastSeen =
-        timestamp;
-
       const sid =
         uid("ses");
 
-      db.sessions.push({
-        id: sid,
-        userId: u.id,
-        createdAt:
+      await pool.query(
+        `
+        UPDATE users
+        SET
+          last_login_at = $1,
+          last_seen = $1
+        WHERE id = $2
+        `,
+        [
           timestamp,
-        lastSeen:
-          timestamp,
-      });
+          row.id,
+        ]
+      );
 
-      clean();
-      save();
+      await pool.query(
+        `
+        INSERT INTO sessions (
+          id,
+          user_id,
+          created_at,
+          last_seen
+        )
+        VALUES ($1,$2,$3,$4)
+        `,
+        [
+          sid,
+          row.id,
+          timestamp,
+          timestamp,
+        ]
+      );
+
+      await clean();
+
+      const u = {
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        phone: row.phone || "",
+        balance: Number(row.balance || 0),
+        isAdmin: !!row.is_admin,
+        joinedAt: row.joined_at,
+        lastLoginAt: timestamp,
+        lastSeen: timestamp,
+      };
 
       const accessToken =
         token(u, sid);
@@ -859,7 +945,7 @@ app.post(
 app.post(
   "/api/auth/logout",
   auth,
-  (req, res) => {
+  async (req, res) => {
     try {
       const t =
         getAuthToken(req);
@@ -871,14 +957,13 @@ app.post(
             JWT_SECRET
           );
 
-        db.sessions =
-          db.sessions.filter(
-            (s) =>
-              s.id !==
-              p.sid
-          );
-
-        save();
+        await pool.query(
+          `
+          DELETE FROM sessions
+          WHERE id = $1
+          `,
+          [p.sid]
+        );
       }
     } catch {}
 
@@ -922,40 +1007,54 @@ app.get(
 app.post(
   "/api/presence",
   auth,
-  (req, res) => {
-    req.user.lastSeen =
-      now();
+  async (req, res) => {
+    try {
+      const timestamp =
+        now();
 
-    const t =
-      getAuthToken(req);
+      const t =
+        getAuthToken(req);
 
-    if (t) {
-      try {
+      if (t) {
         const p =
           jwt.verify(
             t,
             JWT_SECRET
           );
 
-        const s =
-          db.sessions.find(
-            (x) =>
-              x.id ===
-              p.sid
-          );
+        await pool.query(
+          `
+          UPDATE sessions
+          SET last_seen = $1
+          WHERE id = $2
+          `,
+          [
+            timestamp,
+            p.sid,
+          ]
+        );
 
-        if (s) {
-          s.lastSeen =
-            req.user.lastSeen;
-        }
+        await pool.query(
+          `
+          UPDATE users
+          SET last_seen = $1
+          WHERE id = $2
+          `,
+          [
+            timestamp,
+            req.user.id,
+          ]
+        );
+      }
 
-        save();
-      } catch {}
+      res.json({
+        online: true,
+      });
+    } catch {
+      res.json({
+        online: true,
+      });
     }
-
-    res.json({
-      online: true,
-    });
   }
 );
 
@@ -969,7 +1068,7 @@ function pv(v) {
     id: v.id,
     title: v.title,
     description:
-      v.description,
+      v.description || "",
     type: v.type,
     source: v.source,
     reward: Number(
@@ -983,32 +1082,57 @@ function pv(v) {
     active:
       v.active !== false,
     createdAt:
-      v.createdAt,
+      v.createdAt || v.created_at,
+  };
+}
+
+function videoFromRow(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    type: row.type,
+    source: row.source,
+    reward: Number(row.reward || 0),
+    duration: Number(row.duration || 30),
+    command: row.command || "",
+    active: !!row.active,
+    createdAt: row.created_at,
   };
 }
 
 app.get(
   "/api/videos",
   auth,
-  (req, res) => {
-    res.json({
-      videos:
-        db.videos
-          .filter(
-            (v) =>
-              v.active !== false
-          )
-          .sort(
-            (a, b) =>
-              new Date(
-                b.createdAt
-              ) -
-              new Date(
-                a.createdAt
-              )
-          )
-          .map(pv),
-    });
+  async (req, res) => {
+    try {
+      const result =
+        await pool.query(
+          `
+          SELECT *
+          FROM videos
+          WHERE active = TRUE
+          ORDER BY created_at DESC
+          `
+        );
+
+      res.json({
+        videos:
+          result.rows.map(
+            videoFromRow
+          ),
+      });
+    } catch (err) {
+      console.error(
+        "VIDEOS ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not load videos.",
+      });
+    }
   }
 );
 
@@ -1020,66 +1144,135 @@ app.get(
 app.post(
   "/api/videos/:id/claim",
   auth,
-  (req, res) => {
-    const v =
-      db.videos.find(
-        (x) =>
-          x.id ===
-            req.params.id &&
-          x.active !== false
+  async (req, res) => {
+    const client =
+      await pool.connect();
+
+    try {
+      await client.query(
+        "BEGIN"
       );
 
-    if (!v) {
-      return res
-        .status(404)
-        .json({
-          error:
-            "Video not found.",
-        });
-    }
+      const videoResult =
+        await client.query(
+          `
+          SELECT *
+          FROM videos
+          WHERE id = $1
+          AND active = TRUE
+          LIMIT 1
+          `,
+          [req.params.id]
+        );
 
-    v.claims ??= [];
-    v.claimTimes ??= {};
+      if (
+        videoResult.rows.length === 0
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
 
-    if (
-      v.claims.includes(
-        req.user.id
-      )
-    ) {
-      return res
-        .status(409)
-        .json({
-          error:
-            "You already claimed this video.",
-        });
-    }
+        return res
+          .status(404)
+          .json({
+            error:
+              "Video not found.",
+          });
+      }
 
-    v.claims.push(
-      req.user.id
-    );
+      const v =
+        videoResult.rows[0];
 
-    v.claimTimes[
-      req.user.id
-    ] = now();
+      const claimId =
+        uid("claim");
 
-    req.user.balance =
-      Number(
-        req.user.balance || 0
-      ) +
-      Number(
-        v.reward || 0
+      const claimResult =
+        await client.query(
+          `
+          INSERT INTO video_claims (
+            id,
+            video_id,
+            user_id,
+            claimed_at
+          )
+          VALUES ($1,$2,$3,$4)
+          ON CONFLICT (video_id, user_id)
+          DO NOTHING
+          RETURNING id
+          `,
+          [
+            claimId,
+            v.id,
+            req.user.id,
+            now(),
+          ]
+        );
+
+      if (
+        claimResult.rows.length === 0
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res
+          .status(409)
+          .json({
+            error:
+              "You already claimed this video.",
+          });
+      }
+
+      const reward =
+        Number(v.reward || 0);
+
+      const balanceResult =
+        await client.query(
+          `
+          UPDATE users
+          SET balance = balance + $1,
+              last_seen = $2
+          WHERE id = $3
+          AND deleted = FALSE
+          RETURNING balance
+          `,
+          [
+            reward,
+            now(),
+            req.user.id,
+          ]
+        );
+
+      await client.query(
+        "COMMIT"
       );
 
-    save();
+      res.json({
+        ok: true,
+        reward,
+        balance:
+          Number(
+            balanceResult.rows[0]
+              .balance
+          ),
+      });
+    } catch (err) {
+      await client.query(
+        "ROLLBACK"
+      );
 
-    res.json({
-      ok: true,
-      reward: Number(
-        v.reward || 0
-      ),
-      balance:
-        req.user.balance,
-    });
+      console.error(
+        "CLAIM ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not claim this video.",
+      });
+    } finally {
+      client.release();
+    }
   }
 );
 
@@ -1091,41 +1284,50 @@ app.post(
 app.get(
   "/api/history",
   auth,
-  (req, res) => {
-    const a = [];
+  async (req, res) => {
+    try {
+      const result =
+        await pool.query(
+          `
+          SELECT
+            v.id,
+            v.title,
+            v.reward,
+            vc.claimed_at
+          FROM video_claims vc
+          JOIN videos v
+            ON v.id = vc.video_id
+          WHERE vc.user_id = $1
+          ORDER BY vc.claimed_at DESC
+          `,
+          [req.user.id]
+        );
 
-    for (const v of db.videos) {
-      if (
-        v.claims?.includes(
-          req.user.id
-        )
-      ) {
-        a.push({
-          id: v.id,
-          title: v.title,
-          reward: Number(
-            v.reward || 0
+      res.json({
+        history:
+          result.rows.map(
+            (row) => ({
+              id: row.id,
+              title: row.title,
+              reward: Number(
+                row.reward || 0
+              ),
+              claimedAt:
+                row.claimed_at,
+            })
           ),
-          claimedAt:
-            v.claimTimes?.[
-              req.user.id
-            ] || null,
-        });
-      }
-    }
+      });
+    } catch (err) {
+      console.error(
+        "HISTORY ERROR:",
+        err
+      );
 
-    res.json({
-      history:
-        a.sort(
-          (a, b) =>
-            new Date(
-              b.claimedAt || 0
-            ) -
-            new Date(
-              a.claimedAt || 0
-            )
-        ),
-    });
+      res.status(500).json({
+        error:
+          "Could not load history.",
+      });
+    }
   }
 );
 
@@ -1176,13 +1378,12 @@ app.get(
 
 /* =========================
    WITHDRAWALS
-   NO 5-ADS REQUIREMENT
 ========================= */
 
 app.post(
   "/api/withdrawals",
   auth,
-  (req, res) => {
+  async (req, res) => {
     const amount =
       Number(
         req.body.amount
@@ -1216,11 +1417,8 @@ app.post(
       ).trim();
 
     if (
-      !Number.isFinite(
-        amount
-      ) ||
-      amount <
-        MIN_WITHDRAWAL
+      !Number.isFinite(amount) ||
+      amount < MIN_WITHDRAWAL
     ) {
       return res
         .status(400)
@@ -1230,24 +1428,7 @@ app.post(
     }
 
     if (
-      amount >
-      Number(
-        req.user.balance ||
-          0
-      )
-    ) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Insufficient funds. The amount you entered is higher than your available balance.",
-        });
-    }
-
-    if (
-      !/^\d{10}$/.test(
-        account
-      )
+      !/^\d{10}$/.test(account)
     ) {
       return res
         .status(400)
@@ -1267,8 +1448,7 @@ app.post(
     }
 
     if (
-      accountName.length <
-      2
+      accountName.length < 2
     ) {
       return res
         .status(400)
@@ -1278,91 +1458,274 @@ app.post(
         });
     }
 
-    req.user.balance -=
-      amount;
+    const client =
+      await pool.connect();
 
-    const wd = {
-      id: uid("wd"),
-      userId:
-        req.user.id,
-      amount,
-      method,
-      account,
-      bankName,
-      accountName,
-      status: "pending",
-      createdAt: now(),
-    };
-
-    db.withdrawals.push(
-      wd
-    );
-
-    let chat =
-      db.chats.find(
-        (c) =>
-          c.userId ===
-          req.user.id
+    try {
+      await client.query(
+        "BEGIN"
       );
 
-    if (!chat) {
-      chat = {
-        id: uid("chat"),
-        userId:
+      const userResult =
+        await client.query(
+          `
+          SELECT *
+          FROM users
+          WHERE id = $1
+          AND deleted = FALSE
+          FOR UPDATE
+          `,
+          [req.user.id]
+        );
+
+      if (
+        userResult.rows.length === 0
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res
+          .status(404)
+          .json({
+            error:
+              "User not found.",
+          });
+      }
+
+      const user =
+        userResult.rows[0];
+
+      const balance =
+        Number(
+          user.balance || 0
+        );
+
+      if (
+        amount > balance
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "Insufficient funds. The amount you entered is higher than your available balance.",
+          });
+      }
+
+      const newBalance =
+        balance - amount;
+
+      await client.query(
+        `
+        UPDATE users
+        SET balance = $1
+        WHERE id = $2
+        `,
+        [
+          newBalance,
           req.user.id,
-        createdAt: now(),
-        updatedAt: now(),
-        messages: [],
-      };
-
-      db.chats.push(
-        chat
+        ]
       );
+
+      const withdrawalId =
+        uid("wd");
+
+      await client.query(
+        `
+        INSERT INTO withdrawals (
+          id,
+          user_id,
+          amount,
+          method,
+          account,
+          bank_name,
+          account_name,
+          status,
+          created_at
+        )
+        VALUES (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9
+        )
+        `,
+        [
+          withdrawalId,
+          req.user.id,
+          amount,
+          method,
+          account,
+          bankName,
+          accountName,
+          "pending",
+          now(),
+        ]
+      );
+
+      let chatResult =
+        await client.query(
+          `
+          SELECT *
+          FROM chats
+          WHERE user_id = $1
+          LIMIT 1
+          `,
+          [req.user.id]
+        );
+
+      let chat;
+
+      if (
+        chatResult.rows.length === 0
+      ) {
+        const chatId =
+          uid("chat");
+
+        const timestamp =
+          now();
+
+        const inserted =
+          await client.query(
+            `
+            INSERT INTO chats (
+              id,
+              user_id,
+              created_at,
+              updated_at
+            )
+            VALUES ($1,$2,$3,$4)
+            RETURNING *
+            `,
+            [
+              chatId,
+              req.user.id,
+              timestamp,
+              timestamp,
+            ]
+          );
+
+        chat =
+          inserted.rows[0];
+      } else {
+        chat =
+          chatResult.rows[0];
+
+        await client.query(
+          `
+          UPDATE chats
+          SET updated_at = $1
+          WHERE id = $2
+          `,
+          [
+            now(),
+            chat.id,
+          ]
+        );
+      }
+
+      const messageId =
+        uid("msg");
+
+      await client.query(
+        `
+        INSERT INTO chat_messages (
+          id,
+          chat_id,
+          sender,
+          text,
+          created_at
+        )
+        VALUES ($1,$2,$3,$4,$5)
+        `,
+        [
+          messageId,
+          chat.id,
+          "system",
+          `Withdrawal request of ₦${amount.toFixed(2)} submitted. The admin can contact you here.`,
+          now(),
+        ]
+      );
+
+      await client.query(
+        "COMMIT"
+      );
+
+      res.json({
+        ok: true,
+        balance: newBalance,
+        chatId: chat.id,
+      });
+    } catch (err) {
+      await client.query(
+        "ROLLBACK"
+      );
+
+      console.error(
+        "WITHDRAWAL ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Withdrawal request failed. Please try again.",
+      });
+    } finally {
+      client.release();
     }
-
-    chat.updatedAt =
-      now();
-
-    chat.messages.push({
-      id: uid("msg"),
-      sender: "system",
-      text: `Withdrawal request of ₦${amount.toFixed(2)} submitted. The admin can contact you here.`,
-      createdAt: now(),
-    });
-
-    save();
-
-    res.json({
-      ok: true,
-      balance:
-        req.user.balance,
-      chatId: chat.id,
-    });
   }
 );
 
 app.get(
   "/api/withdrawals",
   auth,
-  (req, res) =>
-    res.json({
-      withdrawals:
-        db.withdrawals
-          .filter(
-            (w) =>
-              w.userId ===
-              req.user.id
-          )
-          .sort(
-            (a, b) =>
-              new Date(
-                b.createdAt
-              ) -
-              new Date(
-                a.createdAt
-              )
+  async (req, res) => {
+    try {
+      const result =
+        await pool.query(
+          `
+          SELECT
+            id,
+            user_id AS "userId",
+            amount,
+            method,
+            account,
+            bank_name AS "bankName",
+            account_name AS "accountName",
+            status,
+            created_at AS "createdAt",
+            processed_at AS "processedAt"
+          FROM withdrawals
+          WHERE user_id = $1
+          ORDER BY created_at DESC
+          `,
+          [req.user.id]
+        );
+
+      res.json({
+        withdrawals:
+          result.rows.map(
+            (w) => ({
+              ...w,
+              amount: Number(
+                w.amount || 0
+              ),
+            })
           ),
-    })
+      });
+    } catch (err) {
+      console.error(
+        "WITHDRAWALS ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not load withdrawals.",
+      });
+    }
+  }
 );
 
 
@@ -1373,38 +1736,74 @@ app.get(
 app.get(
   "/api/chat/me",
   auth,
-  (req, res) => {
-    const chat =
-      db.chats.find(
-        (c) =>
-          c.userId ===
-          req.user.id
+  async (req, res) => {
+    try {
+      const chatResult =
+        await pool.query(
+          `
+          SELECT *
+          FROM chats
+          WHERE user_id = $1
+          LIMIT 1
+          `,
+          [req.user.id]
+        );
+
+      if (
+        chatResult.rows.length === 0
+      ) {
+        return res.json({
+          chat: null,
+        });
+      }
+
+      const chat =
+        chatResult.rows[0];
+
+      const messages =
+        await pool.query(
+          `
+          SELECT
+            id,
+            sender,
+            text,
+            created_at AS "createdAt"
+          FROM chat_messages
+          WHERE chat_id = $1
+          ORDER BY created_at ASC
+          `,
+          [chat.id]
+        );
+
+      res.json({
+        chat: {
+          id: chat.id,
+          createdAt:
+            chat.created_at,
+          updatedAt:
+            chat.updated_at,
+          messages:
+            messages.rows,
+        },
+      });
+    } catch (err) {
+      console.error(
+        "CHAT ERROR:",
+        err
       );
 
-    if (!chat) {
-      return res.json({
-        chat: null,
+      res.status(500).json({
+        error:
+          "Could not load chat.",
       });
     }
-
-    res.json({
-      chat: {
-        id: chat.id,
-        createdAt:
-          chat.createdAt,
-        updatedAt:
-          chat.updatedAt,
-        messages:
-          chat.messages,
-      },
-    });
   }
 );
 
 app.post(
   "/api/chat/me/messages",
   auth,
-  (req, res) => {
+  async (req, res) => {
     const text =
       String(
         req.body.text ||
@@ -1420,45 +1819,87 @@ app.post(
         });
     }
 
-    const chat =
-      db.chats.find(
-        (c) =>
-          c.userId ===
-          req.user.id
+    try {
+      const chatResult =
+        await pool.query(
+          `
+          SELECT *
+          FROM chats
+          WHERE user_id = $1
+          LIMIT 1
+          `,
+          [req.user.id]
+        );
+
+      if (
+        chatResult.rows.length === 0
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Your private admin chat is created after you submit a withdrawal request.",
+          });
+      }
+
+      const chat =
+        chatResult.rows[0];
+
+      const message = {
+        id: uid("msg"),
+        sender: "user",
+        text:
+          text.slice(0, 2000),
+        createdAt: now(),
+      };
+
+      await pool.query(
+        `
+        INSERT INTO chat_messages (
+          id,
+          chat_id,
+          sender,
+          text,
+          created_at
+        )
+        VALUES ($1,$2,$3,$4,$5)
+        `,
+        [
+          message.id,
+          chat.id,
+          message.sender,
+          message.text,
+          message.createdAt,
+        ]
       );
 
-    if (!chat) {
-      return res
-        .status(404)
-        .json({
-          error:
-            "Your private admin chat is created after you submit a withdrawal request.",
-        });
+      await pool.query(
+        `
+        UPDATE chats
+        SET updated_at = $1
+        WHERE id = $2
+        `,
+        [
+          message.createdAt,
+          chat.id,
+        ]
+      );
+
+      res.json({
+        ok: true,
+        message,
+      });
+    } catch (err) {
+      console.error(
+        "CHAT MESSAGE ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not send message.",
+      });
     }
-
-    chat.messages.push({
-      id: uid("msg"),
-      sender: "user",
-      text:
-        text.slice(
-          0,
-          2000
-        ),
-      createdAt: now(),
-    });
-
-    chat.updatedAt =
-      now();
-
-    save();
-
-    res.json({
-      ok: true,
-      message:
-        chat.messages.at(
-          -1
-        ),
-    });
   }
 );
 
@@ -1471,41 +1912,70 @@ app.get(
   "/api/admin/chats",
   auth,
   admin,
-  (req, res) => {
-    const chats =
-      db.chats
-        .map((c) => {
-          const u =
-            db.users.find(
-              (x) =>
-                x.id ===
-                c.userId
-            );
-
-          return {
-            ...c,
-            userId:
-              c.userId,
-            userName:
-              u?.name ||
-              "Deleted user",
-            userEmail:
-              u?.email || "",
-          };
-        })
-        .sort(
-          (a, b) =>
-            new Date(
-              b.updatedAt
-            ) -
-            new Date(
-              a.updatedAt
-            )
+  async (req, res) => {
+    try {
+      const chatsResult =
+        await pool.query(
+          `
+          SELECT
+            c.*,
+            COALESCE(u.name, 'Deleted user') AS user_name,
+            COALESCE(u.email, '') AS user_email
+          FROM chats c
+          LEFT JOIN users u
+            ON u.id = c.user_id
+          ORDER BY c.updated_at DESC
+          `
         );
 
-    res.json({
-      chats,
-    });
+      const chats = [];
+
+      for (
+        const row of chatsResult.rows
+      ) {
+        const messages =
+          await pool.query(
+            `
+            SELECT
+              id,
+              sender,
+              text,
+              created_at AS "createdAt"
+            FROM chat_messages
+            WHERE chat_id = $1
+            ORDER BY created_at ASC
+            `,
+            [row.id]
+          );
+
+        chats.push({
+          id: row.id,
+          userId: row.user_id,
+          userName: row.user_name,
+          userEmail: row.user_email,
+          createdAt:
+            row.created_at,
+          updatedAt:
+            row.updated_at,
+          messages:
+            messages.rows,
+        });
+      }
+
+      res.json({
+        chats,
+      });
+    } catch (err) {
+      console.error(
+        "ADMIN CHATS ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not load chats.",
+      });
+    }
   }
 );
 
@@ -1513,7 +1983,7 @@ app.post(
   "/api/admin/chats/:id/messages",
   auth,
   admin,
-  (req, res) => {
+  async (req, res) => {
     const text =
       String(
         req.body.text ||
@@ -1529,45 +1999,84 @@ app.post(
         });
     }
 
-    const chat =
-      db.chats.find(
-        (c) =>
-          c.id ===
-          req.params.id
+    try {
+      const chatResult =
+        await pool.query(
+          `
+          SELECT *
+          FROM chats
+          WHERE id = $1
+          LIMIT 1
+          `,
+          [req.params.id]
+        );
+
+      if (
+        chatResult.rows.length === 0
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Chat not found.",
+          });
+      }
+
+      const message = {
+        id: uid("msg"),
+        sender: "admin",
+        text:
+          text.slice(0, 2000),
+        createdAt: now(),
+      };
+
+      await pool.query(
+        `
+        INSERT INTO chat_messages (
+          id,
+          chat_id,
+          sender,
+          text,
+          created_at
+        )
+        VALUES ($1,$2,$3,$4,$5)
+        `,
+        [
+          message.id,
+          req.params.id,
+          message.sender,
+          message.text,
+          message.createdAt,
+        ]
       );
 
-    if (!chat) {
-      return res
-        .status(404)
-        .json({
-          error:
-            "Chat not found.",
-        });
+      await pool.query(
+        `
+        UPDATE chats
+        SET updated_at = $1
+        WHERE id = $2
+        `,
+        [
+          message.createdAt,
+          req.params.id,
+        ]
+      );
+
+      res.json({
+        ok: true,
+        message,
+      });
+    } catch (err) {
+      console.error(
+        "ADMIN CHAT MESSAGE ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not send message.",
+      });
     }
-
-    chat.messages.push({
-      id: uid("msg"),
-      sender: "admin",
-      text:
-        text.slice(
-          0,
-          2000
-        ),
-      createdAt: now(),
-    });
-
-    chat.updatedAt =
-      now();
-
-    save();
-
-    res.json({
-      ok: true,
-      message:
-        chat.messages.at(
-          -1
-        ),
-    });
   }
 );
 
@@ -1580,51 +2089,67 @@ app.get(
   "/api/admin/stats",
   auth,
   admin,
-  (req, res) => {
-    clean();
+  async (req, res) => {
+    try {
+      await clean();
 
-    const online =
-      new Set(
-        db.sessions
-          .filter(
-            (s) =>
-              Date.now() -
-                new Date(
-                  s.lastSeen
-                ).getTime() <
-              90000
-          )
-          .map(
-            (s) =>
-              s.userId
-          )
+      const result =
+        await pool.query(
+          `
+          SELECT
+            (
+              SELECT COUNT(*)
+              FROM users
+              WHERE is_admin = FALSE
+              AND deleted = FALSE
+            ) AS users,
+
+            (
+              SELECT COUNT(DISTINCT user_id)
+              FROM sessions
+              WHERE last_seen >= NOW() - INTERVAL '90 seconds'
+            ) AS online,
+
+            (
+              SELECT COUNT(*)
+              FROM videos
+              WHERE active = TRUE
+            ) AS videos,
+
+            (
+              SELECT COUNT(*)
+              FROM withdrawals
+              WHERE status = 'pending'
+            ) AS pending_withdrawals
+          `
+        );
+
+      const row =
+        result.rows[0];
+
+      res.json({
+        users:
+          Number(row.users),
+        online:
+          Number(row.online),
+        videos:
+          Number(row.videos),
+        pendingWithdrawals:
+          Number(
+            row.pending_withdrawals
+          ),
+      });
+    } catch (err) {
+      console.error(
+        "ADMIN STATS ERROR:",
+        err
       );
 
-    res.json({
-      users:
-        db.users.filter(
-          (u) =>
-            !u.isAdmin &&
-            !u.deleted
-        ).length,
-
-      online:
-        online.size,
-
-      videos:
-        db.videos.filter(
-          (v) =>
-            v.active !==
-            false
-        ).length,
-
-      pendingWithdrawals:
-        db.withdrawals.filter(
-          (w) =>
-            w.status ===
-            "pending"
-        ).length,
-    });
+      res.status(500).json({
+        error:
+          "Could not load admin statistics.",
+      });
+    }
   }
 );
 
@@ -1637,52 +2162,64 @@ app.get(
   "/api/admin/users",
   auth,
   admin,
-  (req, res) => {
-    clean();
+  async (req, res) => {
+    try {
+      await clean();
 
-    const online =
-      new Set(
-        db.sessions
-          .filter(
-            (s) =>
-              Date.now() -
-                new Date(
-                  s.lastSeen
-                ).getTime() <
-              90000
-          )
-          .map(
-            (s) =>
-              s.userId
-          )
+      const result =
+        await pool.query(
+          `
+          SELECT
+            u.*,
+            EXISTS (
+              SELECT 1
+              FROM sessions s
+              WHERE s.user_id = u.id
+              AND s.last_seen >= NOW() - INTERVAL '90 seconds'
+            ) AS online
+          FROM users u
+          WHERE u.is_admin = FALSE
+          ORDER BY u.joined_at DESC
+          `
+        );
+
+      res.json({
+        users:
+          result.rows.map(
+            (u) => ({
+              id: u.id,
+              name: u.name,
+              email: u.email,
+              phone: u.phone || "",
+              balance: Number(
+                u.balance || 0
+              ),
+              isAdmin:
+                !!u.is_admin,
+              joinedAt:
+                u.joined_at,
+              lastLoginAt:
+                u.last_login_at,
+              lastSeen:
+                u.last_seen,
+              deleted:
+                !!u.deleted,
+              online:
+                !!u.online,
+            })
+          ),
+      });
+    } catch (err) {
+      console.error(
+        "ADMIN USERS ERROR:",
+        err
       );
 
-    res.json({
-      users:
-        db.users
-          .filter(
-            (u) =>
-              !u.isAdmin
-          )
-          .map((u) => ({
-            ...pub(u),
-            deleted:
-              !!u.deleted,
-            online:
-              online.has(
-                u.id
-              ),
-          }))
-          .sort(
-            (a, b) =>
-              new Date(
-                b.joinedAt
-              ) -
-              new Date(
-                a.joinedAt
-              )
-          ),
-    });
+      res.status(500).json({
+        error:
+          "Could not load users.",
+      });
+    }
   }
 );
 
@@ -1690,38 +2227,62 @@ app.delete(
   "/api/admin/users/:id",
   auth,
   admin,
-  (req, res) => {
-    const u =
-      db.users.find(
-        (x) =>
-          x.id ===
-            req.params.id &&
-          !x.isAdmin
+  async (req, res) => {
+    try {
+      const result =
+        await pool.query(
+          `
+          SELECT *
+          FROM users
+          WHERE id = $1
+          AND is_admin = FALSE
+          LIMIT 1
+          `,
+          [req.params.id]
+        );
+
+      if (
+        result.rows.length === 0
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "User not found.",
+          });
+      }
+
+      await pool.query(
+        `
+        UPDATE users
+        SET deleted = TRUE
+        WHERE id = $1
+        `,
+        [req.params.id]
       );
 
-    if (!u) {
-      return res
-        .status(404)
-        .json({
-          error:
-            "User not found.",
-        });
+      await pool.query(
+        `
+        DELETE FROM sessions
+        WHERE user_id = $1
+        `,
+        [req.params.id]
+      );
+
+      res.json({
+        ok: true,
+      });
+    } catch (err) {
+      console.error(
+        "DELETE USER ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not delete user.",
+      });
     }
-
-    u.deleted = true;
-
-    db.sessions =
-      db.sessions.filter(
-        (s) =>
-          s.userId !==
-          u.id
-      );
-
-    save();
-
-    res.json({
-      ok: true,
-    });
   }
 );
 
@@ -1734,11 +2295,35 @@ app.get(
   "/api/admin/videos",
   auth,
   admin,
-  (_, res) =>
-    res.json({
-      videos:
-        db.videos.map(pv),
-    })
+  async (_, res) => {
+    try {
+      const result =
+        await pool.query(
+          `
+          SELECT *
+          FROM videos
+          ORDER BY created_at DESC
+          `
+        );
+
+      res.json({
+        videos:
+          result.rows.map(
+            videoFromRow
+          ),
+      });
+    } catch (err) {
+      console.error(
+        "ADMIN VIDEOS ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not load videos.",
+      });
+    }
+  }
 );
 
 function validUrl(x) {
@@ -1822,7 +2407,7 @@ app.post(
   "/api/admin/videos/url",
   auth,
   admin,
-  (req, res) => {
+  async (req, res) => {
     const title =
       String(
         req.body.title ||
@@ -1845,8 +2430,7 @@ app.post(
         5,
         Math.floor(
           Number(
-            req.body
-              .duration ??
+            req.body.duration ??
               DEFAULT_DURATION
           )
         )
@@ -1883,9 +2467,7 @@ app.post(
     }
 
     if (
-      !Number.isFinite(
-        reward
-      ) ||
+      !Number.isFinite(reward) ||
       reward < 0
     ) {
       return res
@@ -1900,25 +2482,62 @@ app.post(
       id: uid("vid"),
       title,
       description,
-      type:
-        kind(source),
+      type: kind(source),
       source,
       reward,
       duration,
       command,
       active: true,
-      claims: [],
-      claimTimes: {},
       createdAt: now(),
     };
 
-    db.videos.push(v);
+    try {
+      await pool.query(
+        `
+        INSERT INTO videos (
+          id,
+          title,
+          description,
+          type,
+          source,
+          reward,
+          duration,
+          command,
+          active,
+          created_at
+        )
+        VALUES (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10
+        )
+        `,
+        [
+          v.id,
+          v.title,
+          v.description,
+          v.type,
+          v.source,
+          v.reward,
+          v.duration,
+          v.command,
+          v.active,
+          v.createdAt,
+        ]
+      );
 
-    save();
+      res.json({
+        video: pv(v),
+      });
+    } catch (err) {
+      console.error(
+        "CREATE VIDEO ERROR:",
+        err
+      );
 
-    res.json({
-      video: pv(v),
-    });
+      res.status(500).json({
+        error:
+          "Could not create video.",
+      });
+    }
   }
 );
 
@@ -1932,7 +2551,7 @@ app.post(
   auth,
   admin,
   upload.single("video"),
-  (req, res) => {
+  async (req, res) => {
     if (!req.file) {
       return res
         .status(400)
@@ -1949,17 +2568,17 @@ app.post(
       );
 
     if (
-      !Number.isFinite(
-        reward
-      ) ||
+      !Number.isFinite(reward) ||
       reward < 0
     ) {
-      fs.unlinkSync(
-        path.join(
-          UPLOAD_DIR,
-          req.file.filename
-        )
-      );
+      try {
+        fs.unlinkSync(
+          path.join(
+            UPLOAD_DIR,
+            req.file.filename
+          )
+        );
+      } catch {}
 
       return res
         .status(400)
@@ -1975,14 +2594,12 @@ app.post(
       title:
         String(
           req.body.title ||
-            req.file
-              .originalname
+            req.file.originalname
         ).trim(),
 
       description:
         String(
-          req.body
-            .description ||
+          req.body.description ||
             ""
         ).trim(),
 
@@ -1999,8 +2616,7 @@ app.post(
           5,
           Math.floor(
             Number(
-              req.body
-                .duration ??
+              req.body.duration ??
                 DEFAULT_DURATION
             )
           )
@@ -2013,18 +2629,65 @@ app.post(
         ).trim(),
 
       active: true,
-      claims: [],
-      claimTimes: {},
       createdAt: now(),
     };
 
-    db.videos.push(v);
+    try {
+      await pool.query(
+        `
+        INSERT INTO videos (
+          id,
+          title,
+          description,
+          type,
+          source,
+          reward,
+          duration,
+          command,
+          active,
+          created_at
+        )
+        VALUES (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10
+        )
+        `,
+        [
+          v.id,
+          v.title,
+          v.description,
+          v.type,
+          v.source,
+          v.reward,
+          v.duration,
+          v.command,
+          v.active,
+          v.createdAt,
+        ]
+      );
 
-    save();
+      res.json({
+        video: pv(v),
+      });
+    } catch (err) {
+      try {
+        fs.unlinkSync(
+          path.join(
+            UPLOAD_DIR,
+            req.file.filename
+          )
+        );
+      } catch {}
 
-    res.json({
-      video: pv(v),
-    });
+      console.error(
+        "UPLOAD VIDEO ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not save uploaded video.",
+      });
+    }
   }
 );
 
@@ -2037,97 +2700,159 @@ app.patch(
   "/api/admin/videos/:id",
   auth,
   admin,
-  (req, res) => {
-    const v =
-      db.videos.find(
-        (x) =>
-          x.id ===
-          req.params.id
+  async (req, res) => {
+    try {
+      const existing =
+        await pool.query(
+          `
+          SELECT *
+          FROM videos
+          WHERE id = $1
+          LIMIT 1
+          `,
+          [req.params.id]
+        );
+
+      if (
+        existing.rows.length === 0
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Video not found.",
+          });
+      }
+
+      const v =
+        existing.rows[0];
+
+      let reward =
+        Number(v.reward || 0);
+
+      let duration =
+        Number(v.duration || 30);
+
+      let command =
+        v.command || "";
+
+      let title =
+        v.title;
+
+      let description =
+        v.description || "";
+
+      let active =
+        !!v.active;
+
+      if (
+        req.body.reward !==
+        undefined
+      ) {
+        reward =
+          Math.max(
+            0,
+            Number(
+              req.body.reward
+            )
+          );
+      }
+
+      if (
+        req.body.duration !==
+        undefined
+      ) {
+        duration =
+          Math.max(
+            5,
+            Math.floor(
+              Number(
+                req.body.duration
+              )
+            )
+          );
+      }
+
+      if (
+        req.body.command !==
+        undefined
+      ) {
+        command =
+          String(
+            req.body.command
+          );
+      }
+
+      if (
+        req.body.title !==
+        undefined
+      ) {
+        title =
+          String(
+            req.body.title
+          );
+      }
+
+      if (
+        req.body.description !==
+        undefined
+      ) {
+        description =
+          String(
+            req.body.description
+          );
+      }
+
+      if (
+        req.body.active !==
+        undefined
+      ) {
+        active =
+          !!req.body.active;
+      }
+
+      const updated =
+        await pool.query(
+          `
+          UPDATE videos
+          SET
+            reward = $1,
+            duration = $2,
+            command = $3,
+            title = $4,
+            description = $5,
+            active = $6
+          WHERE id = $7
+          RETURNING *
+          `,
+          [
+            reward,
+            duration,
+            command,
+            title,
+            description,
+            active,
+            req.params.id,
+          ]
+        );
+
+      res.json({
+        video:
+          videoFromRow(
+            updated.rows[0]
+          ),
+      });
+    } catch (err) {
+      console.error(
+        "EDIT VIDEO ERROR:",
+        err
       );
 
-    if (!v) {
-      return res
-        .status(404)
-        .json({
-          error:
-            "Video not found.",
-        });
+      res.status(500).json({
+        error:
+          "Could not update video.",
+      });
     }
-
-    if (
-      req.body.reward !==
-      undefined
-    ) {
-      v.reward =
-        Math.max(
-          0,
-          Number(
-            req.body
-              .reward
-          )
-        );
-    }
-
-    if (
-      req.body.duration !==
-      undefined
-    ) {
-      v.duration =
-        Math.max(
-          5,
-          Math.floor(
-            Number(
-              req.body
-                .duration
-            )
-          )
-        );
-    }
-
-    if (
-      req.body.command !==
-      undefined
-    ) {
-      v.command =
-        String(
-          req.body.command
-        );
-    }
-
-    if (
-      req.body.title !==
-      undefined
-    ) {
-      v.title =
-        String(
-          req.body.title
-        );
-    }
-
-    if (
-      req.body.description !==
-      undefined
-    ) {
-      v.description =
-        String(
-          req.body
-            .description
-        );
-    }
-
-    if (
-      req.body.active !==
-      undefined
-    ) {
-      v.active =
-        !!req.body.active;
-    }
-
-    save();
-
-    res.json({
-      video: pv(v),
-    });
   }
 );
 
@@ -2140,55 +2865,74 @@ app.delete(
   "/api/admin/videos/:id",
   auth,
   admin,
-  (req, res) => {
-    const i =
-      db.videos.findIndex(
-        (v) =>
-          v.id ===
-          req.params.id
-      );
-
-    if (i < 0) {
-      return res
-        .status(404)
-        .json({
-          error:
-            "Video not found.",
-        });
-    }
-
-    const v =
-      db.videos[i];
-
-    if (
-      v.type ===
-      "upload"
-    ) {
-      const f =
-        path.join(
-          UPLOAD_DIR,
-          path.basename(
-            v.source
-          )
+  async (req, res) => {
+    try {
+      const result =
+        await pool.query(
+          `
+          SELECT *
+          FROM videos
+          WHERE id = $1
+          LIMIT 1
+          `,
+          [req.params.id]
         );
 
       if (
-        fs.existsSync(f)
+        result.rows.length === 0
       ) {
-        fs.unlinkSync(f);
+        return res
+          .status(404)
+          .json({
+            error:
+              "Video not found.",
+          });
       }
+
+      const v =
+        result.rows[0];
+
+      if (
+        v.type ===
+        "upload"
+      ) {
+        const f =
+          path.join(
+            UPLOAD_DIR,
+            path.basename(
+              v.source
+            )
+          );
+
+        if (
+          fs.existsSync(f)
+        ) {
+          fs.unlinkSync(f);
+        }
+      }
+
+      await pool.query(
+        `
+        DELETE FROM videos
+        WHERE id = $1
+        `,
+        [req.params.id]
+      );
+
+      res.json({
+        ok: true,
+      });
+    } catch (err) {
+      console.error(
+        "DELETE VIDEO ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not delete video.",
+      });
     }
-
-    db.videos.splice(
-      i,
-      1
-    );
-
-    save();
-
-    res.json({
-      ok: true,
-    });
   }
 );
 
@@ -2201,57 +2945,67 @@ app.get(
   "/api/admin/withdrawals",
   auth,
   admin,
-  (_, res) =>
-    res.json({
-      withdrawals:
-        db.withdrawals.map(
-          (w) => {
-            const u =
-              db.users.find(
-                (x) =>
-                  x.id ===
-                  w.userId
-              );
+  async (_, res) => {
+    try {
+      const result =
+        await pool.query(
+          `
+          SELECT
+            w.id,
+            w.user_id AS "userId",
+            w.amount,
+            w.method,
+            w.account,
+            w.bank_name AS "bankName",
+            w.account_name AS "accountName",
+            w.status,
+            w.created_at AS "createdAt",
+            w.processed_at AS "processedAt",
+            COALESCE(u.name, 'Deleted user') AS "userName",
+            COALESCE(u.email, '') AS "userEmail"
+          FROM withdrawals w
+          LEFT JOIN users u
+            ON u.id = w.user_id
+          ORDER BY w.created_at DESC
+          `
+        );
 
-            return {
+      res.json({
+        withdrawals:
+          result.rows.map(
+            (w) => ({
               ...w,
-              userName:
-                u?.name ||
-                "Deleted user",
-              userEmail:
-                u?.email || "",
-            };
-          }
-        ),
-    })
+              amount:
+                Number(
+                  w.amount || 0
+                ),
+            })
+          ),
+      });
+    } catch (err) {
+      console.error(
+        "ADMIN WITHDRAWALS ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not load withdrawals.",
+      });
+    }
+  }
 );
 
 app.patch(
   "/api/admin/withdrawals/:id",
   auth,
   admin,
-  (req, res) => {
-    const w =
-      db.withdrawals.find(
-        (x) =>
-          x.id ===
-          req.params.id
-      );
-
+  async (req, res) => {
     const status =
       String(
         req.body.status ||
           ""
       );
-
-    if (!w) {
-      return res
-        .status(404)
-        .json({
-          error:
-            "Withdrawal not found.",
-        });
-    }
 
     if (
       ![
@@ -2267,51 +3021,121 @@ app.patch(
         });
     }
 
-    if (
-      w.status !==
-      "pending"
-    ) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Already processed.",
-        });
-    }
+    const client =
+      await pool.connect();
 
-    w.status =
-      status;
+    try {
+      await client.query(
+        "BEGIN"
+      );
 
-    w.processedAt =
-      now();
-
-    if (
-      status ===
-      "rejected"
-    ) {
-      const u =
-        db.users.find(
-          (x) =>
-            x.id ===
-            w.userId
+      const withdrawalResult =
+        await client.query(
+          `
+          SELECT *
+          FROM withdrawals
+          WHERE id = $1
+          FOR UPDATE
+          `,
+          [req.params.id]
         );
 
       if (
-        u &&
-        !u.deleted
+        withdrawalResult.rows.length === 0
       ) {
-        u.balance +=
-          Number(
-            w.amount
-          );
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res
+          .status(404)
+          .json({
+            error:
+              "Withdrawal not found.",
+          });
       }
+
+      const w =
+        withdrawalResult.rows[0];
+
+      if (
+        w.status !==
+        "pending"
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "Already processed.",
+          });
+      }
+
+      const processedAt =
+        now();
+
+      await client.query(
+        `
+        UPDATE withdrawals
+        SET
+          status = $1,
+          processed_at = $2
+        WHERE id = $3
+        `,
+        [
+          status,
+          processedAt,
+          req.params.id,
+        ]
+      );
+
+      if (
+        status ===
+        "rejected"
+      ) {
+        await client.query(
+          `
+          UPDATE users
+          SET balance = balance + $1
+          WHERE id = $2
+          AND deleted = FALSE
+          `,
+          [
+            Number(
+              w.amount
+            ),
+            w.user_id,
+          ]
+        );
+      }
+
+      await client.query(
+        "COMMIT"
+      );
+
+      res.json({
+        ok: true,
+      });
+    } catch (err) {
+      await client.query(
+        "ROLLBACK"
+      );
+
+      console.error(
+        "ADMIN WITHDRAWAL ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not process withdrawal.",
+      });
+    } finally {
+      client.release();
     }
-
-    save();
-
-    res.json({
-      ok: true,
-    });
   }
 );
 
@@ -2363,20 +3187,42 @@ app.use(
    START
 ========================= */
 
-app.listen(
-  PORT,
-  "0.0.0.0",
-  () => {
-    console.log(
-      `Watchsave running on port ${PORT}`
+async function start() {
+  try {
+    await pool.query(
+      "SELECT 1"
     );
 
-    console.log(
-      `Data directory: ${DATA_DIR}`
+    await ensureAdmin();
+
+    await clean();
+
+    app.listen(
+      PORT,
+      "0.0.0.0",
+      () => {
+        console.log(
+          `Watchsave running on port ${PORT}`
+        );
+
+        console.log(
+          "Database: PostgreSQL"
+        );
+
+        console.log(
+          `Upload directory: ${UPLOAD_DIR}`
+        );
+      }
+    );
+  } catch (err) {
+    console.error(
+      "❌ SERVER STARTUP FAILED:"
     );
 
-    console.log(
-      `Upload directory: ${UPLOAD_DIR}`
-    );
+    console.error(err);
+
+    process.exit(1);
   }
-);
+}
+
+start();
