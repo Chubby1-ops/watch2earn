@@ -36,39 +36,30 @@ const DEFAULT_DURATION =
 const SESSION_MAX_AGE =
   30 * 24 * 60 * 60 * 1000;
 
+
 /* =========================
-   PERSISTENT STORAGE
+   STORAGE
 ========================= */
 
 /*
-  On Render:
-    /var/data
-
-  Locally:
-    ./data
-
-  Render Persistent Disk should
-  be mounted at /var/data.
+  IMPORTANT:
+  Use the local project directory on Render.
+  This prevents the EACCES error caused by
+  trying to create /var/data without a
+  Render Persistent Disk mounted.
 */
 
-const PERSISTENT_DIR = process.env.RENDER
-  ? "/var/data"
-  : path.join(__dirname, "data");
+const PERSISTENT_DIR =
+  path.join(__dirname, "data");
 
-const DATA_DIR = path.join(
-  PERSISTENT_DIR,
-  "data"
-);
+const DATA_DIR =
+  path.join(PERSISTENT_DIR, "db");
 
-const DATA_FILE = path.join(
-  DATA_DIR,
-  "watchsave-data.json"
-);
+const DATA_FILE =
+  path.join(DATA_DIR, "watchsave-data.json");
 
-const UPLOAD_DIR = path.join(
-  PERSISTENT_DIR,
-  "uploads"
-);
+const UPLOAD_DIR =
+  path.join(PERSISTENT_DIR, "uploads");
 
 fs.mkdirSync(DATA_DIR, {
   recursive: true,
@@ -77,6 +68,7 @@ fs.mkdirSync(DATA_DIR, {
 fs.mkdirSync(UPLOAD_DIR, {
   recursive: true,
 });
+
 
 /* =========================
    HELPERS
@@ -87,6 +79,7 @@ const uid = (p) =>
 
 const now = () =>
   new Date().toISOString();
+
 
 /* =========================
    DATABASE
@@ -140,6 +133,7 @@ function save() {
   );
 }
 
+
 /* =========================
    SESSION CLEANUP
 ========================= */
@@ -173,6 +167,7 @@ function clean() {
     save();
   }
 }
+
 
 /* =========================
    ADMIN
@@ -216,6 +211,7 @@ function ensureAdmin() {
 }
 
 ensureAdmin();
+
 
 /* =========================
    UPLOADS
@@ -270,6 +266,7 @@ const upload =
       ),
   });
 
+
 /* =========================
    MIDDLEWARE
 ========================= */
@@ -289,6 +286,7 @@ app.use(
 app.use(
   cookieParser()
 );
+
 
 /* =========================
    CORS
@@ -350,6 +348,7 @@ app.use(
   }
 );
 
+
 app.use(
   rateLimit({
     windowMs: 60000,
@@ -358,6 +357,7 @@ app.use(
     legacyHeaders: false,
   })
 );
+
 
 /* =========================
    AUTHENTICATION
@@ -530,6 +530,7 @@ const pub = (u) => ({
   lastSeen: u.lastSeen,
 });
 
+
 /* =========================
    HEALTH
 ========================= */
@@ -542,6 +543,7 @@ app.get(
       time: now(),
     })
 );
+
 
 /* =========================
    REGISTER
@@ -717,6 +719,7 @@ app.post(
   }
 );
 
+
 /* =========================
    LOGIN
 ========================= */
@@ -848,6 +851,7 @@ app.post(
   }
 );
 
+
 /* =========================
    LOGOUT
 ========================= */
@@ -894,6 +898,7 @@ app.post(
   }
 );
 
+
 /* =========================
    CURRENT USER
 ========================= */
@@ -908,6 +913,7 @@ app.get(
       ),
     })
 );
+
 
 /* =========================
    PRESENCE
@@ -952,6 +958,7 @@ app.post(
     });
   }
 );
+
 
 /* =========================
    VIDEOS
@@ -1004,6 +1011,7 @@ app.get(
     });
   }
 );
+
 
 /* =========================
    CLAIM VIDEO
@@ -1075,6 +1083,7 @@ app.post(
   }
 );
 
+
 /* =========================
    HISTORY
 ========================= */
@@ -1120,6 +1129,7 @@ app.get(
   }
 );
 
+
 /* =========================
    BANKS
 ========================= */
@@ -1163,8 +1173,10 @@ app.get(
     })
 );
 
+
 /* =========================
    WITHDRAWALS
+   NO 5-ADS REQUIREMENT
 ========================= */
 
 app.post(
@@ -1353,6 +1365,7 @@ app.get(
     })
 );
 
+
 /* =========================
    USER CHAT
 ========================= */
@@ -1448,6 +1461,7 @@ app.post(
     });
   }
 );
+
 
 /* =========================
    ADMIN CHATS
@@ -1557,6 +1571,7 @@ app.post(
   }
 );
 
+
 /* =========================
    ADMIN STATS
 ========================= */
@@ -1612,6 +1627,7 @@ app.get(
     });
   }
 );
+
 
 /* =========================
    ADMIN USERS
@@ -1709,6 +1725,7 @@ app.delete(
   }
 );
 
+
 /* =========================
    ADMIN VIDEOS
 ========================= */
@@ -1795,6 +1812,7 @@ function kind(x) {
 
   return "url";
 }
+
 
 /* =========================
    PUBLISH URL VIDEO
@@ -1904,6 +1922,7 @@ app.post(
   }
 );
 
+
 /* =========================
    UPLOAD VIDEO
 ========================= */
@@ -2009,6 +2028,7 @@ app.post(
   }
 );
 
+
 /* =========================
    EDIT VIDEO
 ========================= */
@@ -2111,6 +2131,7 @@ app.patch(
   }
 );
 
+
 /* =========================
    DELETE VIDEO
 ========================= */
@@ -2170,6 +2191,7 @@ app.delete(
     });
   }
 );
+
 
 /* =========================
    ADMIN WITHDRAWALS
@@ -2293,9 +2315,17 @@ app.patch(
   }
 );
 
+
 /* =========================
    STATIC FRONTEND
 ========================= */
+
+app.use(
+  "/uploads",
+  express.static(
+    UPLOAD_DIR
+  )
+);
 
 app.use(
   express.static(
@@ -2305,6 +2335,7 @@ app.use(
     )
   )
 );
+
 
 /* =========================
    ERROR HANDLER
@@ -2326,6 +2357,7 @@ app.use(
     });
   }
 );
+
 
 /* =========================
    START
