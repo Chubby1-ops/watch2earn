@@ -725,6 +725,109 @@ $("#userChatForm").onsubmit =
     }
   };
 
+  /* =========================
+   WITHDRAWAL
+========================= */
+
+$("#withdraw").onsubmit = async (e) => {
+  e.preventDefault();
+
+  const account = $("#account").value.trim();
+  const bankName = $("#bank").value.trim();
+  const accountName = $("#accountNameInput").value.trim();
+  const amount = Number($("#amount").value);
+
+  const btn = $("#withdrawBtn");
+  const hint = $("#withdrawHint");
+
+  if (!account || !bankName || !accountName || !amount) {
+    hint.textContent =
+      "Please complete all withdrawal fields.";
+    return;
+  }
+
+  if (!/^\d{10}$/.test(account)) {
+    hint.textContent =
+      "Account number must contain exactly 10 digits.";
+    return;
+  }
+
+  if (amount < 10000) {
+    hint.textContent =
+      "Minimum withdrawal is ₦10,000.";
+    return;
+  }
+
+  if (amount > Number(user?.balance || 0)) {
+    hint.textContent =
+      "Insufficient balance.";
+    return;
+  }
+
+  btn.disabled = true;
+  hint.textContent =
+    "Submitting withdrawal request...";
+
+  try {
+    const r = await api(
+      "/api/withdrawals",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount,
+          account,
+          method: "Manual Bank Transfer",
+          bankName,
+          accountName,
+        }),
+      }
+    );
+
+    /* Update user's balance immediately */
+    user.balance = Number(r.balance || 0);
+
+    $("#balance").textContent =
+      $("#heroBalance").textContent =
+        money(user.balance);
+
+    hint.textContent =
+      "Withdrawal request sent successfully.";
+
+    toast(
+      `Withdrawal request of ${money(amount)} sent successfully!`
+    );
+
+    /* Clear form */
+    $("#account").value = "";
+    $("#bank").value = "";
+    $("#accountNameInput").value = "";
+    $("#amount").value = "";
+
+    /* Refresh dashboard */
+    await loadChat();
+
+  } catch (e) {
+    console.error(
+      "WITHDRAWAL ERROR:",
+      e
+    );
+
+    hint.textContent =
+      e.message || "Withdrawal request failed.";
+
+    toast(
+      e.message || "Withdrawal request failed.",
+      false
+    );
+
+  } finally {
+    btn.disabled = false;
+  }
+};
+
 /* =========================
    PRESENCE + CHAT REFRESH
 ========================= */
