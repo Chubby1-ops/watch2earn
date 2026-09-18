@@ -1,0 +1,80 @@
+{
+  "users": [
+    {
+      "id": "usr_4eab1c6ce9680d40",
+      "name": "Watchsave Admin",
+      "email": "admin@watchsave.local",
+      "phone": "",
+      "passwordHash": "$2b$12$TaKuDxHBIPbqVK85Zp0UAOCUuQLgmhYrQmotvFJ/3nNHlBbPHJn2S",
+      "balance": 2,
+      "isAdmin": true,
+      "deleted": false,
+      "joinedAt": "2026-09-16T16:23:41.737Z",
+      "lastLoginAt": "2026-09-17T13:57:01.561Z",
+      "lastSeen": "2026-09-17T13:57:01.561Z",
+      "withdrawUnlockClaims": 0
+    }
+  ],
+  "videos": [
+    {
+      "id": "vid_2937ac3c3467e347",
+      "title": "clips",
+      "description": "",
+      "type": "tiktok",
+      "source": "https://www.tiktok.com/@movies.clips0711/video/7680418547364908301?is_from_webapp=1&sender_device=pc",
+      "reward": 2,
+      "duration": 5,
+      "command": "",
+      "active": true,
+      "claims": [
+        "usr_4eab1c6ce9680d40"
+      ],
+      "claimTimes": {
+        "usr_4eab1c6ce9680d40": "2026-09-17T10:21:13.239Z"
+      },
+      "createdAt": "2026-09-17T10:20:23.140Z"
+    },
+    {
+      "id": "vid_1ce6ea023bf6dd9c",
+      "title": "Anime video",
+      "description": "Showing  animals",
+      "type": "tiktok",
+      "source": "https://www.tiktok.com/@egbe1991/video/7678451105034177806?is_from_webapp=1&sender_device=pc",
+      "reward": 100,
+      "duration": 30,
+      "command": "",
+      "active": true,
+      "claims": [],
+      "claimTimes": {},
+      "createdAt": "2026-09-17T12:15:20.860Z"
+    }
+  ],
+  "withdrawals": [],
+  "sessions": [
+    {
+      "id": "ses_325fb7b2f5accc84",
+      "userId": "usr_4eab1c6ce9680d40",
+      "createdAt": "2026-09-17T11:48:30.651Z",
+      "lastSeen": "2026-09-17T13:56:41.761Z"
+    },
+    {
+      "id": "ses_3a2325b1c5ccec97",
+      "userId": "usr_4eab1c6ce9680d40",
+      "createdAt": "2026-09-17T13:56:46.473Z",
+      "lastSeen": "2026-09-17T13:56:46.473Z"
+    },
+    {
+      "id": "ses_e691be9438f87bd9",
+      "userId": "usr_4eab1c6ce9680d40",
+      "createdAt": "2026-09-17T13:56:52.107Z",
+      "lastSeen": "2026-09-17T13:56:52.107Z"
+    },
+    {
+      "id": "ses_68a1647aa9c20f93",
+      "userId": "usr_4eab1c6ce9680d40",
+      "createdAt": "2026-09-17T13:57:01.561Z",
+      "lastSeen": "2026-09-17T13:57:01.561Z"
+    }
+  ],
+  "chats": []
+}
