@@ -18,7 +18,7 @@ const JWT_SECRET =
   process.env.JWT_SECRET || "change-this-secret";
 
 const ADMIN_EMAIL = String(
-  process.env.ADMIN_EMAIL || "admin@watchsave.local",
+  process.env.ADMIN_EMAIL || "admin@watchsave.local"
 ).toLowerCase();
 
 const ADMIN_PASSWORD =
@@ -35,22 +35,47 @@ const DEFAULT_DURATION =
 
 const WITHDRAW_UNLOCK_CLAIMS = 5;
 
-const DATA_DIR = path.join(__dirname, "data");
-const DATA_FILE = path.join(DATA_DIR, "watchsave-data.json");
-const UPLOAD_DIR = path.join(__dirname, "public", "uploads");
+const SESSION_MAX_AGE =
+  30 * 24 * 60 * 60 * 1000;
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const DATA_DIR = path.join(__dirname, "data");
+
+const DATA_FILE = path.join(
+  DATA_DIR,
+  "watchsave-data.json"
+);
+
+const UPLOAD_DIR = path.join(
+  __dirname,
+  "public",
+  "uploads"
+);
+
+fs.mkdirSync(DATA_DIR, {
+  recursive: true,
+});
+
+fs.mkdirSync(UPLOAD_DIR, {
+  recursive: true,
+});
 
 const uid = (p) =>
   `${p}_${crypto.randomBytes(8).toString("hex")}`;
 
-const now = () => new Date().toISOString();
+const now = () =>
+  new Date().toISOString();
+
+/* =========================
+   DATABASE
+========================= */
 
 function load() {
   try {
     const d = JSON.parse(
-      fs.readFileSync(DATA_FILE, "utf8"),
+      fs.readFileSync(
+        DATA_FILE,
+        "utf8"
+      )
     );
 
     d.users ??= [];
@@ -74,34 +99,75 @@ function load() {
 let db = load();
 
 function save() {
-  const t = DATA_FILE + ".tmp";
+  const tempFile =
+    DATA_FILE + ".tmp";
 
   fs.writeFileSync(
-    t,
-    JSON.stringify(db, null, 2),
+    tempFile,
+    JSON.stringify(
+      db,
+      null,
+      2
+    )
   );
 
-  fs.renameSync(t, DATA_FILE);
+  fs.renameSync(
+    tempFile,
+    DATA_FILE
+  );
 }
+
+/* =========================
+   SESSION CLEANUP
+========================= */
 
 function clean() {
-  db.sessions = db.sessions.filter(
-    (s) =>
-      Date.now() -
-        new Date(s.lastSeen).getTime() <
-      600000,
-  );
+  const before =
+    db.sessions.length;
+
+  db.sessions =
+    db.sessions.filter(
+      (s) => {
+        const created =
+          new Date(
+            s.createdAt ||
+              s.lastSeen ||
+              0
+          ).getTime();
+
+        return (
+          Number.isFinite(created) &&
+          Date.now() - created <
+            SESSION_MAX_AGE
+        );
+      }
+    );
+
+  if (
+    db.sessions.length !==
+    before
+  ) {
+    save();
+  }
 }
 
-function ensureAdmin() {
-  const u = db.users.find(
-    (x) => x.email === ADMIN_EMAIL,
-  );
+/* =========================
+   ADMIN
+========================= */
 
-  const h = bcrypt.hashSync(
-    ADMIN_PASSWORD,
-    12,
-  );
+function ensureAdmin() {
+  const u =
+    db.users.find(
+      (x) =>
+        x.email ===
+        ADMIN_EMAIL
+    );
+
+  const h =
+    bcrypt.hashSync(
+      ADMIN_PASSWORD,
+      12
+    );
 
   if (!u) {
     db.users.push({
@@ -129,81 +195,138 @@ function ensureAdmin() {
 
 ensureAdmin();
 
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_, __, cb) =>
-      cb(null, UPLOAD_DIR),
+/* =========================
+   UPLOADS
+========================= */
 
-    filename: (_, f, cb) =>
-      cb(
-        null,
-        `${Date.now()}_${crypto.randomBytes(5).toString("hex")}${path.extname(f.originalname).toLowerCase() || ".mp4"}`,
-      ),
-  }),
-
-  limits: {
-    fileSize: 250 * 1024 * 1024,
-  },
-
-  fileFilter: (_, f, cb) =>
-    cb(
-      /^video\//.test(f.mimetype) ||
-        /\.(mp4|webm|ogg|mov|m4v)$/i.test(
-          f.originalname,
-        )
-        ? null
-        : new Error(
-            "Only video files are allowed.",
+const upload =
+  multer({
+    storage:
+      multer.diskStorage({
+        destination: (
+          _,
+          __,
+          cb
+        ) =>
+          cb(
+            null,
+            UPLOAD_DIR
           ),
-    ),
-});
 
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
+        filename: (
+          _,
+          f,
+          cb
+        ) =>
+          cb(
+            null,
+            `${Date.now()}_${crypto.randomBytes(5).toString("hex")}${path.extname(f.originalname).toLowerCase() || ".mp4"}`
+          ),
+      }),
 
-/*
-  CORS
-  This allows your GitHub Pages frontend to communicate
-  with this backend.
-*/
+    limits: {
+      fileSize:
+        250 * 1024 * 1024,
+    },
+
+    fileFilter: (
+      _,
+      f,
+      cb
+    ) =>
+      cb(
+        /^video\//.test(
+          f.mimetype
+        ) ||
+          /\.(mp4|webm|ogg|mov|m4v)$/i.test(
+            f.originalname
+          )
+          ? null
+          : new Error(
+              "Only video files are allowed."
+            )
+      ),
+  });
+
+/* =========================
+   MIDDLEWARE
+========================= */
+
+app.use(
+  express.json({
+    limit: "2mb",
+  })
+);
+
+app.use(
+  express.urlencoded({
+    extended: true,
+  })
+);
+
+app.use(
+  cookieParser()
+);
+
+/* =========================
+   CORS
+========================= */
+
 const allowedOrigins = [
   "https://chubby1-ops.github.io",
   "http://localhost:3000",
   "http://127.0.0.1:3000",
 ];
 
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
+app.use(
+  (req, res, next) => {
+    const origin =
+      req.headers.origin;
 
-  if (allowedOrigins.includes(origin)) {
-    res.header(
-      "Access-Control-Allow-Origin",
-      origin,
+    if (
+      origin &&
+      allowedOrigins.includes(
+        origin
+      )
+    ) {
+      res.setHeader(
+        "Access-Control-Allow-Origin",
+        origin
+      );
+
+      res.setHeader(
+        "Access-Control-Allow-Credentials",
+        "true"
+      );
+
+      res.setHeader(
+        "Vary",
+        "Origin"
+      );
+    }
+
+    res.setHeader(
+      "Access-Control-Allow-Methods",
+      "GET,POST,PATCH,DELETE,OPTIONS"
     );
 
-    res.header(
-      "Access-Control-Allow-Credentials",
-      "true",
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization"
     );
+
+    if (
+      req.method ===
+      "OPTIONS"
+    ) {
+      return res.sendStatus(
+        204
+      );
+    }
+
+    next();
   }
-
-  res.header(
-    "Access-Control-Allow-Methods",
-    "GET,POST,PATCH,DELETE,OPTIONS",
-  );
-
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Content-Type",
-  );
-
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
-
-  next();
-});
+);
 
 app.use(
   rateLimit({
@@ -211,10 +334,17 @@ app.use(
     limit: 180,
     standardHeaders: true,
     legacyHeaders: false,
-  }),
+  })
 );
 
-function token(u, sid) {
+/* =========================
+   AUTHENTICATION
+========================= */
+
+function token(
+  u,
+  sid
+) {
   return jwt.sign(
     {
       uid: u.id,
@@ -226,60 +356,143 @@ function token(u, sid) {
     JWT_SECRET,
     {
       expiresIn: "30d",
-    },
+    }
+  );
+}
+
+/*
+  Authentication supports BOTH:
+
+  1. Authorization: Bearer TOKEN
+  2. HTTP-only ws_token cookie
+
+  Bearer token is checked first because
+  GitHub Pages and Render are different
+  domains.
+*/
+
+function getAuthToken(req) {
+  const authorization =
+    String(
+      req.headers.authorization ||
+        ""
+    );
+
+  if (
+    authorization
+      .toLowerCase()
+      .startsWith("bearer ")
+  ) {
+    return authorization
+      .slice(7)
+      .trim();
+  }
+
+  return (
+    req.cookies.ws_token ||
+    ""
   );
 }
 
 function current(req) {
-  const t = req.cookies.ws_token;
+  const t =
+    getAuthToken(req);
 
-  if (!t) return null;
+  if (!t) {
+    return null;
+  }
 
   try {
-    const p = jwt.verify(
-      t,
-      JWT_SECRET,
-    );
+    const payload =
+      jwt.verify(
+        t,
+        JWT_SECRET
+      );
 
-    const s = db.sessions.find(
-      (x) =>
-        x.id === p.sid &&
-        x.userId === p.uid,
-    );
+    const session =
+      db.sessions.find(
+        (s) =>
+          s.id ===
+            payload.sid &&
+          s.userId ===
+            payload.uid
+      );
 
-    const u = db.users.find(
-      (x) => x.id === p.uid,
-    );
+    const user =
+      db.users.find(
+        (u) =>
+          u.id ===
+          payload.uid
+      );
 
-    if (!s || !u || u.deleted) {
+    if (
+      !session ||
+      !user ||
+      user.deleted
+    ) {
       return null;
     }
 
-    s.lastSeen = u.lastSeen = now();
+    const created =
+      new Date(
+        session.createdAt ||
+          session.lastSeen ||
+          0
+      ).getTime();
 
-    return u;
+    if (
+      !Number.isFinite(
+        created
+      ) ||
+      Date.now() -
+        created >=
+        SESSION_MAX_AGE
+    ) {
+      return null;
+    }
+
+    session.lastSeen =
+      now();
+
+    user.lastSeen =
+      session.lastSeen;
+
+    return user;
   } catch {
     return null;
   }
 }
 
-function auth(req, res, next) {
-  const u = current(req);
+function auth(
+  req,
+  res,
+  next
+) {
+  const u =
+    current(req);
 
   if (!u) {
     return res
       .status(401)
       .json({
-        error: "Please log in.",
+        error:
+          "Please log in.",
       });
   }
 
   req.user = u;
+
   next();
 }
 
-function admin(req, res, next) {
-  if (!req.user?.isAdmin) {
+function admin(
+  req,
+  res,
+  next
+) {
+  if (
+    !req.user?.isAdmin
+  ) {
     return res
       .status(403)
       .json({
@@ -296,17 +509,24 @@ const pub = (u) => ({
   name: u.name,
   email: u.email,
   phone: u.phone || "",
-  balance: Number(u.balance || 0),
+  balance: Number(
+    u.balance || 0
+  ),
   isAdmin: !!u.isAdmin,
   joinedAt: u.joinedAt,
-  lastLoginAt: u.lastLoginAt,
+  lastLoginAt:
+    u.lastLoginAt,
   lastSeen: u.lastSeen,
-  withdrawUnlockClaims: Number(
-    u.withdrawUnlockClaims || 0,
-  ),
+  withdrawUnlockClaims:
+    Number(
+      u.withdrawUnlockClaims ||
+        0
+    ),
 });
 
-/* HEALTH */
+/* =========================
+   HEALTH
+========================= */
 
 app.get(
   "/api/health",
@@ -314,282 +534,445 @@ app.get(
     res.json({
       ok: true,
       time: now(),
-    }),
+    })
 );
 
-/* REGISTER */
+/* =========================
+   REGISTER
+========================= */
 
 app.post(
   "/api/auth/register",
-  async (req, res) => {
-    const name = String(
-      req.body.name || "",
-    ).trim();
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const name =
+        String(
+          req.body.name ||
+            ""
+        ).trim();
 
-    const email = String(
-      req.body.email || "",
-    )
-      .trim()
-      .toLowerCase();
+      const email =
+        String(
+          req.body.email ||
+            ""
+        )
+          .trim()
+          .toLowerCase();
 
-    const phone = String(
-      req.body.phone || "",
-    ).trim();
+      const phone =
+        String(
+          req.body.phone ||
+            ""
+        ).trim();
 
-    const password = String(
-      req.body.password || "",
-    );
+      const password =
+        String(
+          req.body.password ||
+            ""
+        );
 
-    if (name.length < 2) {
+      if (
+        name.length < 2
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Enter your name.",
+          });
+      }
+
+      if (
+        !/^\S+@\S+\.\S+$/.test(
+          email
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Enter a valid email.",
+          });
+      }
+
+      if (
+        password.length < 6
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Password must be at least 6 characters.",
+          });
+      }
+
+      if (
+        db.users.some(
+          (u) =>
+            u.email ===
+              email &&
+            !u.deleted
+        )
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "An account with that email already exists.",
+          });
+      }
+
+      const timestamp =
+        now();
+
+      const u = {
+        id: uid("usr"),
+        name,
+        email,
+        phone,
+
+        passwordHash:
+          await bcrypt.hash(
+            password,
+            12
+          ),
+
+        balance: 0,
+        isAdmin: false,
+        deleted: false,
+
+        joinedAt:
+          timestamp,
+
+        lastLoginAt:
+          timestamp,
+
+        lastSeen:
+          timestamp,
+
+        withdrawUnlockClaims: 0,
+      };
+
+      const sid =
+        uid("ses");
+
+      db.users.push(u);
+
+      db.sessions.push({
+        id: sid,
+        userId: u.id,
+        createdAt:
+          timestamp,
+        lastSeen:
+          timestamp,
+      });
+
+      clean();
+      save();
+
+      const accessToken =
+        token(u, sid);
+
+      res.cookie(
+        "ws_token",
+        accessToken,
+        {
+          httpOnly: true,
+          sameSite: "none",
+          secure: true,
+          maxAge:
+            SESSION_MAX_AGE,
+          path: "/",
+        }
+      );
+
       return res
-        .status(400)
+        .status(201)
         .json({
-          error: "Enter your name.",
+          ok: true,
+          token:
+            accessToken,
+          user: pub(u),
         });
-    }
+    } catch (err) {
+      console.error(
+        "REGISTER ERROR:",
+        err
+      );
 
-    if (
-      !/^\S+@\S+\.\S+$/.test(email)
-    ) {
       return res
-        .status(400)
+        .status(500)
         .json({
           error:
-            "Enter a valid email.",
+            "Account creation failed. Please try again.",
         });
     }
-
-    if (password.length < 6) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Password must be at least 6 characters.",
-        });
-    }
-
-    if (
-      db.users.some(
-        (u) =>
-          u.email === email &&
-          !u.deleted,
-      )
-    ) {
-      return res
-        .status(409)
-        .json({
-          error:
-            "An account with that email already exists.",
-        });
-    }
-
-    const u = {
-      id: uid("usr"),
-      name,
-      email,
-      phone,
-      passwordHash:
-        await bcrypt.hash(
-          password,
-          12,
-        ),
-      balance: 0,
-      isAdmin: false,
-      deleted: false,
-      joinedAt: now(),
-      lastLoginAt: null,
-      lastSeen: now(),
-      withdrawUnlockClaims: 0,
-    };
-
-    const sid = uid("ses");
-
-    db.users.push(u);
-
-    db.sessions.push({
-      id: sid,
-      userId: u.id,
-      createdAt: now(),
-      lastSeen: now(),
-    });
-
-    save();
-
-    res.cookie(
-      "ws_token",
-      token(u, sid),
-      {
-        httpOnly: true,
-        sameSite: "none",
-        secure: true,
-        maxAge: 2592000000,
-      },
-    );
-
-    res.json({
-      user: pub(u),
-    });
-  },
+  }
 );
 
-/* LOGIN */
+/* =========================
+   LOGIN
+========================= */
 
 app.post(
   "/api/auth/login",
-  async (req, res) => {
-    const email = String(
-      req.body.email || "",
-    )
-      .trim()
-      .toLowerCase();
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const email =
+        String(
+          req.body.email ||
+            ""
+        )
+          .trim()
+          .toLowerCase();
 
-    const password = String(
-      req.body.password || "",
-    );
+      const password =
+        String(
+          req.body.password ||
+            ""
+        );
 
-    const u = db.users.find(
-      (x) =>
-        x.email === email &&
-        !x.deleted,
-    );
+      if (
+        !email ||
+        !password
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Email and password are required.",
+          });
+      }
 
-    if (
-      !u ||
-      !(await bcrypt.compare(
-        password,
-        u.passwordHash,
-      ))
-    ) {
+      const u =
+        db.users.find(
+          (x) =>
+            x.email ===
+              email &&
+            !x.deleted
+        );
+
+      if (!u) {
+        return res
+          .status(401)
+          .json({
+            error:
+              "Invalid email or password.",
+          });
+      }
+
+      const passwordOk =
+        await bcrypt.compare(
+          password,
+          u.passwordHash
+        );
+
+      if (!passwordOk) {
+        return res
+          .status(401)
+          .json({
+            error:
+              "Invalid email or password.",
+          });
+      }
+
+      const timestamp =
+        now();
+
+      u.lastLoginAt =
+        timestamp;
+
+      u.lastSeen =
+        timestamp;
+
+      const sid =
+        uid("ses");
+
+      db.sessions.push({
+        id: sid,
+        userId: u.id,
+        createdAt:
+          timestamp,
+        lastSeen:
+          timestamp,
+      });
+
+      clean();
+      save();
+
+      const accessToken =
+        token(u, sid);
+
+      res.cookie(
+        "ws_token",
+        accessToken,
+        {
+          httpOnly: true,
+          sameSite: "none",
+          secure: true,
+          maxAge:
+            SESSION_MAX_AGE,
+          path: "/",
+        }
+      );
+
+      return res.json({
+        ok: true,
+        token:
+          accessToken,
+        user: pub(u),
+      });
+    } catch (err) {
+      console.error(
+        "LOGIN ERROR:",
+        err
+      );
+
       return res
-        .status(401)
+        .status(500)
         .json({
           error:
-            "Invalid email or password.",
+            "Login failed. Please try again.",
         });
     }
-
-    u.lastLoginAt =
-      u.lastSeen = now();
-
-    const sid = uid("ses");
-
-    db.sessions.push({
-      id: sid,
-      userId: u.id,
-      createdAt: now(),
-      lastSeen: now(),
-    });
-
-    save();
-
-    res.cookie(
-      "ws_token",
-      token(u, sid),
-      {
-        httpOnly: true,
-        sameSite: "none",
-        secure: true,
-        maxAge: 2592000000,
-      },
-    );
-
-    res.json({
-      user: pub(u),
-    });
-  },
+  }
 );
 
-/* LOGOUT */
+/* =========================
+   LOGOUT
+========================= */
 
 app.post(
   "/api/auth/logout",
   auth,
   (req, res) => {
     try {
-      const p = jwt.verify(
-        req.cookies.ws_token,
-        JWT_SECRET,
-      );
+      const t =
+        getAuthToken(req);
 
-      db.sessions =
-        db.sessions.filter(
-          (s) => s.id !== p.sid,
-        );
+      if (t) {
+        const p =
+          jwt.verify(
+            t,
+            JWT_SECRET
+          );
 
-      save();
+        db.sessions =
+          db.sessions.filter(
+            (s) =>
+              s.id !==
+              p.sid
+          );
+
+        save();
+      }
     } catch {}
 
-    res.clearCookie("ws_token", {
-      httpOnly: true,
-      sameSite: "none",
-      secure: true,
-    });
+    res.clearCookie(
+      "ws_token",
+      {
+        httpOnly: true,
+        sameSite: "none",
+        secure: true,
+        path: "/",
+      }
+    );
 
     res.json({
       ok: true,
     });
-  },
+  }
 );
 
-/* CURRENT USER */
+/* =========================
+   CURRENT USER
+========================= */
 
 app.get(
   "/api/auth/me",
   auth,
   (req, res) =>
     res.json({
-      user: pub(req.user),
-    }),
+      user: pub(
+        req.user
+      ),
+    })
 );
 
-/* PRESENCE */
+/* =========================
+   PRESENCE
+========================= */
 
 app.post(
   "/api/presence",
   auth,
   (req, res) => {
-    req.user.lastSeen = now();
+    req.user.lastSeen =
+      now();
 
-    try {
-      const p = jwt.verify(
-        req.cookies.ws_token,
-        JWT_SECRET,
-      );
+    const t =
+      getAuthToken(req);
 
-      const s = db.sessions.find(
-        (x) => x.id === p.sid,
-      );
+    if (t) {
+      try {
+        const p =
+          jwt.verify(
+            t,
+            JWT_SECRET
+          );
 
-      if (s) {
-        s.lastSeen =
-          req.user.lastSeen;
-      }
+        const s =
+          db.sessions.find(
+            (x) =>
+              x.id ===
+              p.sid
+          );
 
-      save();
-    } catch {}
+        if (s) {
+          s.lastSeen =
+            req.user.lastSeen;
+        }
+
+        save();
+      } catch {}
+    }
 
     res.json({
       online: true,
     });
-  },
+  }
 );
 
-/* VIDEOS */
+/* =========================
+   VIDEOS
+========================= */
 
 function pv(v) {
   return {
     id: v.id,
     title: v.title,
-    description: v.description,
+    description:
+      v.description,
     type: v.type,
     source: v.source,
-    reward: Number(v.reward || 0),
-    duration: Number(
-      v.duration || 30,
+    reward: Number(
+      v.reward || 0
     ),
-    command: v.command || "",
-    active: v.active !== false,
-    createdAt: v.createdAt,
+    duration: Number(
+      v.duration || 30
+    ),
+    command:
+      v.command || "",
+    active:
+      v.active !== false,
+    createdAt:
+      v.createdAt,
   };
 }
 
@@ -598,36 +981,41 @@ app.get(
   auth,
   (req, res) => {
     res.json({
-      videos: db.videos
-        .filter(
-          (v) =>
-            v.active !== false,
-        )
-        .sort(
-          (a, b) =>
-            new Date(
-              b.createdAt,
-            ) -
-            new Date(
-              a.createdAt,
-            ),
-        )
-        .map(pv),
+      videos:
+        db.videos
+          .filter(
+            (v) =>
+              v.active !== false
+          )
+          .sort(
+            (a, b) =>
+              new Date(
+                b.createdAt
+              ) -
+              new Date(
+                a.createdAt
+              )
+          )
+          .map(pv),
     });
-  },
+  }
 );
 
-/* CLAIM VIDEO */
+/* =========================
+   CLAIM VIDEO
+========================= */
 
 app.post(
   "/api/videos/:id/claim",
   auth,
   (req, res) => {
-    const v = db.videos.find(
-      (x) =>
-        x.id === req.params.id &&
-        x.active !== false,
-    );
+    const v =
+      db.videos.find(
+        (x) =>
+          x.id ===
+            req.params.id &&
+          x.active !== false
+      );
 
     if (!v) {
       return res
@@ -643,7 +1031,7 @@ app.post(
 
     if (
       v.claims.includes(
-        req.user.id,
+        req.user.id
       )
     ) {
       return res
@@ -656,11 +1044,12 @@ app.post(
 
     const balanceBefore =
       Number(
-        req.user.balance || 0,
+        req.user.balance ||
+          0
       );
 
     v.claims.push(
-      req.user.id,
+      req.user.id
     );
 
     v.claimTimes[
@@ -669,7 +1058,9 @@ app.post(
 
     req.user.balance =
       balanceBefore +
-      Number(v.reward || 0);
+      Number(
+        v.reward || 0
+      );
 
     if (
       balanceBefore >=
@@ -677,7 +1068,7 @@ app.post(
       Number(
         req.user
           .withdrawUnlockClaims ||
-          0,
+          0
       ) <
         WITHDRAW_UNLOCK_CLAIMS
     ) {
@@ -685,7 +1076,7 @@ app.post(
         Number(
           req.user
             .withdrawUnlockClaims ||
-            0,
+            0
         ) + 1;
     }
 
@@ -694,7 +1085,7 @@ app.post(
     res.json({
       ok: true,
       reward: Number(
-        v.reward || 0,
+        v.reward || 0
       ),
       balance:
         req.user.balance,
@@ -702,15 +1093,17 @@ app.post(
         Number(
           req.user
             .withdrawUnlockClaims ||
-            0,
+            0
         ),
       withdrawUnlockNeeded:
         WITHDRAW_UNLOCK_CLAIMS,
     });
-  },
+  }
 );
 
-/* HISTORY */
+/* =========================
+   HISTORY
+========================= */
 
 app.get(
   "/api/history",
@@ -721,14 +1114,14 @@ app.get(
     for (const v of db.videos) {
       if (
         v.claims?.includes(
-          req.user.id,
+          req.user.id
         )
       ) {
         a.push({
           id: v.id,
           title: v.title,
           reward: Number(
-            v.reward || 0,
+            v.reward || 0
           ),
           claimedAt:
             v.claimTimes?.[
@@ -739,20 +1132,25 @@ app.get(
     }
 
     res.json({
-      history: a.sort(
-        (a, b) =>
-          new Date(
-            b.claimedAt || 0,
-          ) -
-          new Date(
-            a.claimedAt || 0,
-          ),
-      ),
+      history:
+        a.sort(
+          (a, b) =>
+            new Date(
+              b.claimedAt ||
+                0
+            ) -
+            new Date(
+              a.claimedAt ||
+                0
+            )
+        ),
     });
-  },
+  }
 );
 
-/* BANKS */
+/* =========================
+   BANKS
+========================= */
 
 const BANKS = [
   ["Access Bank", "044"],
@@ -777,10 +1175,12 @@ const BANKS = [
   ["Unity Bank", "215"],
   ["Wema Bank", "035"],
   ["Zenith Bank", "057"],
-].map(([name, code]) => ({
-  name,
-  code,
-}));
+].map(
+  ([name, code]) => ({
+    name,
+    code,
+  })
+);
 
 app.get(
   "/api/banks",
@@ -788,45 +1188,62 @@ app.get(
   (_, res) =>
     res.json({
       banks: BANKS,
-    }),
+    })
 );
 
-/* WITHDRAWALS */
+/* =========================
+   WITHDRAWALS
+========================= */
 
 app.post(
   "/api/withdrawals",
   auth,
   (req, res) => {
-    const amount = Number(
-      req.body.amount,
-    );
+    const amount =
+      Number(
+        req.body.amount
+      );
 
-    const account = String(
-      req.body.account || "",
-    ).replace(/\D/g, "");
+    const account =
+      String(
+        req.body.account ||
+          ""
+      ).replace(
+        /\D/g,
+        ""
+      );
 
-    const method = String(
-      req.body.method ||
-        "Manual Bank Transfer",
-    ).trim();
+    const method =
+      String(
+        req.body.method ||
+          "Manual Bank Transfer"
+      ).trim();
 
-    const bankName = String(
-      req.body.bankName || "",
-    ).trim();
+    const bankName =
+      String(
+        req.body.bankName ||
+          ""
+      ).trim();
 
-    const accountName = String(
-      req.body.accountName || "",
-    ).trim();
+    const accountName =
+      String(
+        req.body.accountName ||
+          ""
+      ).trim();
 
-    const progress = Number(
-      req.user
-        .withdrawUnlockClaims ||
-        0,
-    );
+    const progress =
+      Number(
+        req.user
+          .withdrawUnlockClaims ||
+          0
+      );
 
     if (
-      !Number.isFinite(amount) ||
-      amount < MIN_WITHDRAWAL
+      !Number.isFinite(
+        amount
+      ) ||
+      amount <
+        MIN_WITHDRAWAL
     ) {
       return res
         .status(400)
@@ -838,7 +1255,8 @@ app.post(
     if (
       amount >
       Number(
-        req.user.balance || 0,
+        req.user.balance ||
+          0
       )
     ) {
       return res
@@ -851,8 +1269,10 @@ app.post(
 
     if (
       Number(
-        req.user.balance || 0,
-      ) >= MIN_WITHDRAWAL &&
+        req.user.balance ||
+          0
+      ) >=
+        MIN_WITHDRAWAL &&
       progress <
         WITHDRAW_UNLOCK_CLAIMS
     ) {
@@ -863,7 +1283,11 @@ app.post(
         });
     }
 
-    if (!/^\d{10}$/.test(account)) {
+    if (
+      !/^\d{10}$/.test(
+        account
+      )
+    ) {
       return res
         .status(400)
         .json({
@@ -881,7 +1305,10 @@ app.post(
         });
     }
 
-    if (accountName.length < 2) {
+    if (
+      accountName.length <
+      2
+    ) {
       return res
         .status(400)
         .json({
@@ -890,11 +1317,13 @@ app.post(
         });
     }
 
-    req.user.balance -= amount;
+    req.user.balance -=
+      amount;
 
     const wd = {
       id: uid("wd"),
-      userId: req.user.id,
+      userId:
+        req.user.id,
       amount,
       method,
       account,
@@ -904,27 +1333,34 @@ app.post(
       createdAt: now(),
     };
 
-    db.withdrawals.push(wd);
-
-    let chat = db.chats.find(
-      (c) =>
-        c.userId ===
-        req.user.id,
+    db.withdrawals.push(
+      wd
     );
+
+    let chat =
+      db.chats.find(
+        (c) =>
+          c.userId ===
+          req.user.id
+      );
 
     if (!chat) {
       chat = {
         id: uid("chat"),
-        userId: req.user.id,
+        userId:
+          req.user.id,
         createdAt: now(),
         updatedAt: now(),
         messages: [],
       };
 
-      db.chats.push(chat);
+      db.chats.push(
+        chat
+      );
     }
 
-    chat.updatedAt = now();
+    chat.updatedAt =
+      now();
 
     chat.messages.push({
       id: uid("msg"),
@@ -941,7 +1377,7 @@ app.post(
         req.user.balance,
       chatId: chat.id,
     });
-  },
+  }
 );
 
 app.get(
@@ -954,31 +1390,34 @@ app.get(
           .filter(
             (w) =>
               w.userId ===
-              req.user.id,
+              req.user.id
           )
           .sort(
             (a, b) =>
               new Date(
-                b.createdAt,
+                b.createdAt
               ) -
               new Date(
-                a.createdAt,
-              ),
+                a.createdAt
+              )
           ),
-    }),
+    })
 );
 
-/* USER CHAT */
+/* =========================
+   USER CHAT
+========================= */
 
 app.get(
   "/api/chat/me",
   auth,
   (req, res) => {
-    const chat = db.chats.find(
-      (c) =>
-        c.userId ===
-        req.user.id,
-    );
+    const chat =
+      db.chats.find(
+        (c) =>
+          c.userId ===
+          req.user.id
+      );
 
     if (!chat) {
       return res.json({
@@ -997,16 +1436,18 @@ app.get(
           chat.messages,
       },
     });
-  },
+  }
 );
 
 app.post(
   "/api/chat/me/messages",
   auth,
   (req, res) => {
-    const text = String(
-      req.body.text || "",
-    ).trim();
+    const text =
+      String(
+        req.body.text ||
+          ""
+      ).trim();
 
     if (!text) {
       return res
@@ -1017,11 +1458,12 @@ app.post(
         });
     }
 
-    const chat = db.chats.find(
-      (c) =>
-        c.userId ===
-        req.user.id,
-    );
+    const chat =
+      db.chats.find(
+        (c) =>
+          c.userId ===
+          req.user.id
+      );
 
     if (!chat) {
       return res
@@ -1035,60 +1477,73 @@ app.post(
     chat.messages.push({
       id: uid("msg"),
       sender: "user",
-      text: text.slice(0, 2000),
+      text:
+        text.slice(
+          0,
+          2000
+        ),
       createdAt: now(),
     });
 
-    chat.updatedAt = now();
+    chat.updatedAt =
+      now();
 
     save();
 
     res.json({
       ok: true,
       message:
-        chat.messages.at(-1),
+        chat.messages.at(
+          -1
+        ),
     });
-  },
+  }
 );
 
-/* ADMIN CHATS */
+/* =========================
+   ADMIN CHATS
+========================= */
 
 app.get(
   "/api/admin/chats",
   auth,
   admin,
   (req, res) => {
-    const chats = db.chats
-      .map((c) => {
-        const u = db.users.find(
-          (x) =>
-            x.id === c.userId,
-        );
+    const chats =
+      db.chats
+        .map((c) => {
+          const u =
+            db.users.find(
+              (x) =>
+                x.id ===
+                c.userId
+            );
 
-        return {
-          ...c,
-          userId: c.userId,
-          userName:
-            u?.name ||
-            "Deleted user",
-          userEmail:
-            u?.email || "",
-        };
-      })
-      .sort(
-        (a, b) =>
-          new Date(
-            b.updatedAt,
-          ) -
-          new Date(
-            a.updatedAt,
-          ),
-      );
+          return {
+            ...c,
+            userId:
+              c.userId,
+            userName:
+              u?.name ||
+              "Deleted user",
+            userEmail:
+              u?.email || "",
+          };
+        })
+        .sort(
+          (a, b) =>
+            new Date(
+              b.updatedAt
+            ) -
+            new Date(
+              a.updatedAt
+            )
+        );
 
     res.json({
       chats,
     });
-  },
+  }
 );
 
 app.post(
@@ -1096,9 +1551,11 @@ app.post(
   auth,
   admin,
   (req, res) => {
-    const text = String(
-      req.body.text || "",
-    ).trim();
+    const text =
+      String(
+        req.body.text ||
+          ""
+      ).trim();
 
     if (!text) {
       return res
@@ -1109,11 +1566,12 @@ app.post(
         });
     }
 
-    const chat = db.chats.find(
-      (c) =>
-        c.id ===
-        req.params.id,
-    );
+    const chat =
+      db.chats.find(
+        (c) =>
+          c.id ===
+          req.params.id
+      );
 
     if (!chat) {
       return res
@@ -1127,23 +1585,32 @@ app.post(
     chat.messages.push({
       id: uid("msg"),
       sender: "admin",
-      text: text.slice(0, 2000),
+      text:
+        text.slice(
+          0,
+          2000
+        ),
       createdAt: now(),
     });
 
-    chat.updatedAt = now();
+    chat.updatedAt =
+      now();
 
     save();
 
     res.json({
       ok: true,
       message:
-        chat.messages.at(-1),
+        chat.messages.at(
+          -1
+        ),
     });
-  },
+  }
 );
 
-/* ADMIN STATS */
+/* =========================
+   ADMIN STATS
+========================= */
 
 app.get(
   "/api/admin/stats",
@@ -1152,47 +1619,54 @@ app.get(
   (req, res) => {
     clean();
 
-    const online = new Set(
-      db.sessions
-        .filter(
-          (s) =>
-            Date.now() -
-              new Date(
-                s.lastSeen,
-              ).getTime() <
-            90000,
-        )
-        .map(
-          (s) => s.userId,
-        ),
-    );
+    const online =
+      new Set(
+        db.sessions
+          .filter(
+            (s) =>
+              Date.now() -
+                new Date(
+                  s.lastSeen
+                ).getTime() <
+              90000
+          )
+          .map(
+            (s) =>
+              s.userId
+          )
+      );
 
     res.json({
-      users: db.users.filter(
-        (u) =>
-          !u.isAdmin &&
-          !u.deleted,
-      ).length,
+      users:
+        db.users.filter(
+          (u) =>
+            !u.isAdmin &&
+            !u.deleted
+        ).length,
 
-      online: online.size,
+      online:
+        online.size,
 
       videos:
         db.videos.filter(
           (v) =>
-            v.active !== false,
+            v.active !==
+            false
         ).length,
 
       pendingWithdrawals:
         db.withdrawals.filter(
           (w) =>
             w.status ===
-            "pending",
+            "pending"
         ).length,
     });
-  },
+  }
 );
 
-/* ADMIN USERS */
+/* =========================
+   ADMIN USERS
+========================= */
 
 app.get(
   "/api/admin/users",
@@ -1201,44 +1675,50 @@ app.get(
   (req, res) => {
     clean();
 
-    const online = new Set(
-      db.sessions
-        .filter(
-          (s) =>
-            Date.now() -
-              new Date(
-                s.lastSeen,
-              ).getTime() <
-            90000,
-        )
-        .map(
-          (s) => s.userId,
-        ),
-    );
+    const online =
+      new Set(
+        db.sessions
+          .filter(
+            (s) =>
+              Date.now() -
+                new Date(
+                  s.lastSeen
+                ).getTime() <
+              90000
+          )
+          .map(
+            (s) =>
+              s.userId
+          )
+      );
 
     res.json({
-      users: db.users
-        .filter(
-          (u) => !u.isAdmin,
-        )
-        .map((u) => ({
-          ...pub(u),
-          deleted:
-            !!u.deleted,
-          online:
-            online.has(u.id),
-        }))
-        .sort(
-          (a, b) =>
-            new Date(
-              b.joinedAt,
-            ) -
-            new Date(
-              a.joinedAt,
-            ),
-        ),
+      users:
+        db.users
+          .filter(
+            (u) =>
+              !u.isAdmin
+          )
+          .map((u) => ({
+            ...pub(u),
+            deleted:
+              !!u.deleted,
+            online:
+              online.has(
+                u.id
+              ),
+          }))
+          .sort(
+            (a, b) =>
+              new Date(
+                b.joinedAt
+              ) -
+              new Date(
+                a.joinedAt
+              )
+          ),
     });
-  },
+  }
 );
 
 app.delete(
@@ -1246,12 +1726,13 @@ app.delete(
   auth,
   admin,
   (req, res) => {
-    const u = db.users.find(
-      (x) =>
-        x.id ===
-          req.params.id &&
-        !x.isAdmin,
-    );
+    const u =
+      db.users.find(
+        (x) =>
+          x.id ===
+            req.params.id &&
+          !x.isAdmin
+      );
 
     if (!u) {
       return res
@@ -1267,7 +1748,8 @@ app.delete(
     db.sessions =
       db.sessions.filter(
         (s) =>
-          s.userId !== u.id,
+          s.userId !==
+          u.id
       );
 
     save();
@@ -1275,10 +1757,12 @@ app.delete(
     res.json({
       ok: true,
     });
-  },
+  }
 );
 
-/* ADMIN VIDEOS */
+/* =========================
+   ADMIN VIDEOS
+========================= */
 
 app.get(
   "/api/admin/videos",
@@ -1288,18 +1772,24 @@ app.get(
     res.json({
       videos:
         db.videos.map(pv),
-    }),
+    })
 );
 
 function validUrl(x) {
   try {
-    const u = new URL(
-      String(x || "").trim(),
-    );
+    const u =
+      new URL(
+        String(
+          x || ""
+        ).trim()
+      );
 
     if (
-      !["http:", "https:"].includes(
-        u.protocol,
+      ![
+        "http:",
+        "https:",
+      ].includes(
+        u.protocol
       )
     ) {
       throw 0;
@@ -1312,73 +1802,100 @@ function validUrl(x) {
 }
 
 function kind(x) {
-  const h = new URL(x)
-    .hostname.toLowerCase()
-    .replace(/^www\./, "");
+  const h =
+    new URL(x)
+      .hostname
+      .toLowerCase()
+      .replace(
+        /^www\./,
+        ""
+      );
 
-  if (h.includes("tiktok.com"))
+  if (
+    h.includes(
+      "tiktok.com"
+    )
+  )
     return "tiktok";
 
   if (
-    h.includes("youtube.com") ||
+    h.includes(
+      "youtube.com"
+    ) ||
     h === "youtu.be" ||
     h.includes(
-      "youtube-nocookie.com",
+      "youtube-nocookie.com"
     )
   )
     return "youtube";
 
   if (
-    h.includes("facebook.com") ||
+    h.includes(
+      "facebook.com"
+    ) ||
     h === "fb.watch"
   )
     return "facebook";
 
   if (
-    h.includes("instagram.com")
+    h.includes(
+      "instagram.com"
+    )
   )
     return "instagram";
 
   return "url";
 }
 
-/* PUBLISH URL VIDEO */
+/* =========================
+   PUBLISH URL VIDEO
+========================= */
 
 app.post(
   "/api/admin/videos/url",
   auth,
   admin,
   (req, res) => {
-    const title = String(
-      req.body.title || "",
-    ).trim();
+    const title =
+      String(
+        req.body.title ||
+          ""
+      ).trim();
 
-    const source = validUrl(
-      req.body.source,
-    );
+    const source =
+      validUrl(
+        req.body.source
+      );
 
-    const reward = Number(
-      req.body.reward ??
-        DEFAULT_REWARD,
-    );
+    const reward =
+      Number(
+        req.body.reward ??
+          DEFAULT_REWARD
+      );
 
-    const duration = Math.max(
-      5,
-      Math.floor(
-        Number(
-          req.body.duration ??
-            DEFAULT_DURATION,
-        ),
-      ),
-    );
+    const duration =
+      Math.max(
+        5,
+        Math.floor(
+          Number(
+            req.body
+              .duration ??
+              DEFAULT_DURATION
+          )
+        )
+      );
 
-    const command = String(
-      req.body.command || "",
-    ).trim();
+    const command =
+      String(
+        req.body.command ||
+          ""
+      ).trim();
 
-    const description = String(
-      req.body.description || "",
-    ).trim();
+    const description =
+      String(
+        req.body.description ||
+          ""
+      ).trim();
 
     if (!title) {
       return res
@@ -1399,7 +1916,9 @@ app.post(
     }
 
     if (
-      !Number.isFinite(reward) ||
+      !Number.isFinite(
+        reward
+      ) ||
       reward < 0
     ) {
       return res
@@ -1414,7 +1933,8 @@ app.post(
       id: uid("vid"),
       title,
       description,
-      type: kind(source),
+      type:
+        kind(source),
       source,
       reward,
       duration,
@@ -1432,10 +1952,12 @@ app.post(
     res.json({
       video: pv(v),
     });
-  },
+  }
 );
 
-/* UPLOAD VIDEO */
+/* =========================
+   UPLOAD VIDEO
+========================= */
 
 app.post(
   "/api/admin/videos/upload",
@@ -1452,20 +1974,23 @@ app.post(
         });
     }
 
-    const reward = Number(
-      req.body.reward ??
-        DEFAULT_REWARD,
-    );
+    const reward =
+      Number(
+        req.body.reward ??
+          DEFAULT_REWARD
+      );
 
     if (
-      !Number.isFinite(reward) ||
+      !Number.isFinite(
+        reward
+      ) ||
       reward < 0
     ) {
       fs.unlinkSync(
         path.join(
           UPLOAD_DIR,
-          req.file.filename,
-        ),
+          req.file.filename
+        )
       );
 
       return res
@@ -1478,15 +2003,20 @@ app.post(
 
     const v = {
       id: uid("vid"),
-      title: String(
-        req.body.title ||
-          req.file.originalname,
-      ).trim(),
 
-      description: String(
-        req.body.description ||
-          "",
-      ).trim(),
+      title:
+        String(
+          req.body.title ||
+            req.file
+              .originalname
+        ).trim(),
+
+      description:
+        String(
+          req.body
+            .description ||
+            ""
+        ).trim(),
 
       type: "upload",
 
@@ -1496,19 +2026,23 @@ app.post(
 
       reward,
 
-      duration: Math.max(
-        5,
-        Math.floor(
-          Number(
-            req.body.duration ??
-              DEFAULT_DURATION,
-          ),
+      duration:
+        Math.max(
+          5,
+          Math.floor(
+            Number(
+              req.body
+                .duration ??
+                DEFAULT_DURATION
+            )
+          )
         ),
-      ),
 
-      command: String(
-        req.body.command || "",
-      ).trim(),
+      command:
+        String(
+          req.body.command ||
+            ""
+        ).trim(),
 
       active: true,
       claims: [],
@@ -1523,21 +2057,24 @@ app.post(
     res.json({
       video: pv(v),
     });
-  },
+  }
 );
 
-/* EDIT VIDEO */
+/* =========================
+   EDIT VIDEO
+========================= */
 
 app.patch(
   "/api/admin/videos/:id",
   auth,
   admin,
   (req, res) => {
-    const v = db.videos.find(
-      (x) =>
-        x.id ===
-        req.params.id,
-    );
+    const v =
+      db.videos.find(
+        (x) =>
+          x.id ===
+          req.params.id
+      );
 
     if (!v) {
       return res
@@ -1552,44 +2089,50 @@ app.patch(
       req.body.reward !==
       undefined
     ) {
-      v.reward = Math.max(
-        0,
-        Number(
-          req.body.reward,
-        ),
-      );
+      v.reward =
+        Math.max(
+          0,
+          Number(
+            req.body
+              .reward
+          )
+        );
     }
 
     if (
       req.body.duration !==
       undefined
     ) {
-      v.duration = Math.max(
-        5,
-        Math.floor(
-          Number(
-            req.body.duration,
-          ),
-        ),
-      );
+      v.duration =
+        Math.max(
+          5,
+          Math.floor(
+            Number(
+              req.body
+                .duration
+            )
+          )
+        );
     }
 
     if (
       req.body.command !==
       undefined
     ) {
-      v.command = String(
-        req.body.command,
-      );
+      v.command =
+        String(
+          req.body.command
+        );
     }
 
     if (
       req.body.title !==
       undefined
     ) {
-      v.title = String(
-        req.body.title,
-      );
+      v.title =
+        String(
+          req.body.title
+        );
     }
 
     if (
@@ -1598,7 +2141,8 @@ app.patch(
     ) {
       v.description =
         String(
-          req.body.description,
+          req.body
+            .description
         );
     }
 
@@ -1615,10 +2159,12 @@ app.patch(
     res.json({
       video: pv(v),
     });
-  },
+  }
 );
 
-/* DELETE VIDEO */
+/* =========================
+   DELETE VIDEO
+========================= */
 
 app.delete(
   "/api/admin/videos/:id",
@@ -1629,7 +2175,7 @@ app.delete(
       db.videos.findIndex(
         (v) =>
           v.id ===
-          req.params.id,
+          req.params.id
       );
 
     if (i < 0) {
@@ -1641,32 +2187,44 @@ app.delete(
         });
     }
 
-    const v = db.videos[i];
+    const v =
+      db.videos[i];
 
-    if (v.type === "upload") {
-      const f = path.join(
-        UPLOAD_DIR,
-        path.basename(
-          v.source,
-        ),
-      );
+    if (
+      v.type ===
+      "upload"
+    ) {
+      const f =
+        path.join(
+          UPLOAD_DIR,
+          path.basename(
+            v.source
+          )
+        );
 
-      if (fs.existsSync(f)) {
+      if (
+        fs.existsSync(f)
+      ) {
         fs.unlinkSync(f);
       }
     }
 
-    db.videos.splice(i, 1);
+    db.videos.splice(
+      i,
+      1
+    );
 
     save();
 
     res.json({
       ok: true,
     });
-  },
+  }
 );
 
-/* ADMIN WITHDRAWALS */
+/* =========================
+   ADMIN WITHDRAWALS
+========================= */
 
 app.get(
   "/api/admin/withdrawals",
@@ -1681,7 +2239,7 @@ app.get(
               db.users.find(
                 (x) =>
                   x.id ===
-                  w.userId,
+                  w.userId
               );
 
             return {
@@ -1692,9 +2250,9 @@ app.get(
               userEmail:
                 u?.email || "",
             };
-          },
+          }
         ),
-    }),
+    })
 );
 
 app.patch(
@@ -1706,12 +2264,14 @@ app.patch(
       db.withdrawals.find(
         (x) =>
           x.id ===
-          req.params.id,
+          req.params.id
       );
 
-    const status = String(
-      req.body.status || "",
-    );
+    const status =
+      String(
+        req.body.status ||
+          ""
+      );
 
     if (!w) {
       return res
@@ -1723,9 +2283,10 @@ app.patch(
     }
 
     if (
-      !["approved", "rejected"].includes(
-        status,
-      )
+      ![
+        "approved",
+        "rejected",
+      ].includes(status)
     ) {
       return res
         .status(400)
@@ -1735,7 +2296,10 @@ app.patch(
         });
     }
 
-    if (w.status !== "pending") {
+    if (
+      w.status !==
+      "pending"
+    ) {
       return res
         .status(400)
         .json({
@@ -1744,21 +2308,31 @@ app.patch(
         });
     }
 
-    w.status = status;
-    w.processedAt = now();
+    w.status =
+      status;
 
-    if (status === "rejected") {
+    w.processedAt =
+      now();
+
+    if (
+      status ===
+      "rejected"
+    ) {
       const u =
         db.users.find(
           (x) =>
             x.id ===
-            w.userId,
+            w.userId
         );
 
-      if (u && !u.deleted) {
-        u.balance += Number(
-          w.amount,
-        );
+      if (
+        u &&
+        !u.deleted
+      ) {
+        u.balance +=
+          Number(
+            w.amount
+          );
       }
     }
 
@@ -1767,24 +2341,33 @@ app.patch(
     res.json({
       ok: true,
     });
-  },
+  }
 );
 
-/* STATIC FRONTEND */
+/* =========================
+   STATIC FRONTEND
+========================= */
 
 app.use(
   express.static(
     path.join(
       __dirname,
-      "public",
-    ),
-  ),
+      "public"
+    )
+  )
 );
 
-/* ERROR HANDLER */
+/* =========================
+   ERROR HANDLER
+========================= */
 
 app.use(
-  (err, req, res, next) => {
+  (
+    err,
+    req,
+    res,
+    next
+  ) => {
     console.error(err);
 
     res.status(400).json({
@@ -1792,17 +2375,19 @@ app.use(
         err.message ||
         "Request failed.",
     });
-  },
+  }
 );
 
-/* START */
+/* =========================
+   START
+========================= */
 
 app.listen(
   PORT,
   "0.0.0.0",
   () => {
     console.log(
-      `Watchsave running on port ${PORT}`,
+      `Watchsave running on port ${PORT}`
     );
-  },
+  }
 );

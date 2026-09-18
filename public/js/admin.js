@@ -19,12 +19,45 @@ const esc = (s) =>
       })[m],
   );
 
+/* =========================
+   AUTH TOKEN
+========================= */
+
+function getToken() {
+  return localStorage.getItem(
+    "watchsave_token",
+  ) || "";
+}
+
+/* =========================
+   API
+========================= */
+
 async function api(u, o = {}) {
+  const headers = new Headers(
+    o.headers || {},
+  );
+
+  const token = getToken();
+
+  if (token) {
+    headers.set(
+      "Authorization",
+      "Bearer " + token,
+    );
+  }
+
+  /*
+    Do NOT manually set Content-Type
+    when sending FormData.
+  */
+
   const r = await fetch(
     BACKEND_URL + u,
     {
-      credentials: "include",
       ...o,
+      headers,
+      credentials: "include",
     },
   );
 
@@ -34,18 +67,25 @@ async function api(u, o = {}) {
 
   if (!r.ok) {
     throw Error(
-      d.error || "Request failed",
+      d.error ||
+        `Request failed (${r.status})`,
     );
   }
 
   return d;
 }
 
+/* =========================
+   TOAST
+========================= */
+
 function toast(
   m,
   g = true,
 ) {
   const x = $("#toast");
+
+  if (!x) return;
 
   x.textContent = m;
 
@@ -61,7 +101,9 @@ function toast(
   );
 }
 
-/* TABS */
+/* =========================
+   TABS
+========================= */
 
 document
   .querySelectorAll(".tab")
@@ -92,12 +134,15 @@ document
           "active",
         );
 
-        $(
-          "#" +
-            b.dataset.tab,
-        ).classList.add(
-          "active",
+        const pane = $(
+          "#" + b.dataset.tab,
         );
+
+        if (pane) {
+          pane.classList.add(
+            "active",
+          );
+        }
 
         if (
           b.dataset.tab ===
@@ -125,7 +170,9 @@ document
       }),
   );
 
-/* STATS */
+/* =========================
+   STATS
+========================= */
 
 async function stats() {
   const s = await api(
@@ -146,7 +193,9 @@ async function stats() {
     s.pendingWithdrawals;
 }
 
-/* VIDEOS */
+/* =========================
+   VIDEOS
+========================= */
 
 async function videos() {
   const d = await api(
@@ -289,7 +338,9 @@ window.delVideo =
     }
   };
 
-/* USERS */
+/* =========================
+   USERS
+========================= */
 
 async function users() {
   const d = await api(
@@ -403,7 +454,9 @@ window.kick =
     }
   };
 
-/* WITHDRAWALS */
+/* =========================
+   WITHDRAWALS
+========================= */
 
 async function withdrawals() {
   const d = await api(
@@ -528,7 +581,9 @@ window.proc =
     }
   };
 
-/* CHATS */
+/* =========================
+   CHATS
+========================= */
 
 async function chats() {
   const d = await api(
@@ -624,6 +679,7 @@ async function chats() {
                   <button class="primary">
                     Send
                   </button>
+
                 </form>
 
               </div>`,
@@ -688,7 +744,9 @@ async function chats() {
 $("#refreshChats").onclick =
   chats;
 
-/* PUBLISH URL VIDEO */
+/* =========================
+   PUBLISH URL VIDEO
+========================= */
 
 $("#urlForm").onsubmit =
   async (e) => {
@@ -735,7 +793,9 @@ $("#urlForm").onsubmit =
     }
   };
 
-/* UPLOAD VIDEO */
+/* =========================
+   UPLOAD VIDEO
+========================= */
 
 $("#uploadForm").onsubmit =
   async (e) => {
@@ -774,12 +834,16 @@ $("#uploadForm").onsubmit =
     }
   };
 
-/* REFRESH USERS */
+/* =========================
+   REFRESH USERS
+========================= */
 
 $("#refreshUsers").onclick =
   users;
 
-/* LOGOUT */
+/* =========================
+   LOGOUT
+========================= */
 
 $("#logout").onclick =
   async () => {
@@ -790,13 +854,24 @@ $("#logout").onclick =
           method: "POST",
         },
       );
+    } catch (e) {
+      console.warn(
+        "Logout request failed:",
+        e,
+      );
     } finally {
+      localStorage.removeItem(
+        "watchsave_token",
+      );
+
       location.href =
         "./login.html";
     }
   };
 
-/* AUTO REFRESH */
+/* =========================
+   AUTO REFRESH
+========================= */
 
 setInterval(() => {
   stats().catch(() => {});
@@ -818,7 +893,9 @@ setInterval(() => {
   }
 }, 7000);
 
-/* INITIAL LOAD */
+/* =========================
+   INITIAL LOAD
+========================= */
 
 (async () => {
   try {
@@ -826,13 +903,28 @@ setInterval(() => {
       "/api/auth/me",
     );
 
-    if (!m.user.isAdmin) {
-      throw Error();
+    if (
+      !m.user ||
+      !m.user.isAdmin
+    ) {
+      throw Error(
+        "Admin access required",
+      );
     }
 
     await stats();
     await videos();
-  } catch {
+
+  } catch (e) {
+    console.error(
+      "Admin authentication failed:",
+      e,
+    );
+
+    localStorage.removeItem(
+      "watchsave_token",
+    );
+
     location.href =
       "./login.html";
   }

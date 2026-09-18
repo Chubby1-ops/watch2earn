@@ -11,12 +11,40 @@ let user = null,
 const money = (n) =>
   `₦${Number(n || 0).toFixed(2)}`;
 
+/* =========================
+   AUTH TOKEN
+========================= */
+
+function getToken() {
+  return localStorage.getItem(
+    "watchsave_token",
+  ) || "";
+}
+
+/* =========================
+   API
+========================= */
+
 async function api(u, o = {}) {
+  const headers = new Headers(
+    o.headers || {},
+  );
+
+  const token = getToken();
+
+  if (token) {
+    headers.set(
+      "Authorization",
+      "Bearer " + token,
+    );
+  }
+
   const r = await fetch(
     BACKEND_URL + u,
     {
-      credentials: "include",
       ...o,
+      headers,
+      credentials: "include",
     },
   );
 
@@ -26,12 +54,17 @@ async function api(u, o = {}) {
 
   if (!r.ok) {
     throw Error(
-      d.error || "Request failed",
+      d.error ||
+        `Request failed (${r.status})`,
     );
   }
 
   return d;
 }
+
+/* =========================
+   ESCAPE HTML
+========================= */
 
 function esc(s) {
   return String(s ?? "").replace(
@@ -47,10 +80,17 @@ function esc(s) {
   );
 }
 
+/* =========================
+   TOAST
+========================= */
+
 function toast(m, good = true) {
   const x = $("#toast");
 
+  if (!x) return;
+
   x.textContent = m;
+
   x.className =
     "toast show " +
     (good ? "good" : "bad");
@@ -60,6 +100,10 @@ function toast(m, good = true) {
     3000,
   );
 }
+
+/* =========================
+   VIDEO TYPE
+========================= */
 
 function type(v) {
   return v.type === "tiktok"
@@ -75,6 +119,10 @@ function type(v) {
             : "Web video";
 }
 
+/* =========================
+   THUMBNAIL
+========================= */
+
 function thumb(v) {
   if (v.type === "upload") {
     return BACKEND_URL + v.source;
@@ -87,15 +135,11 @@ function thumb(v) {
       let id =
         u.hostname === "youtu.be"
           ? u.pathname.slice(1)
-          : u.searchParams.get(
-              "v",
-            );
+          : u.searchParams.get("v");
 
       if (
         !id &&
-        u.pathname.includes(
-          "/shorts/",
-        )
+        u.pathname.includes("/shorts/")
       ) {
         id = u.pathname
           .split("/shorts/")[1]
@@ -112,6 +156,10 @@ function thumb(v) {
 
   return "";
 }
+
+/* =========================
+   RENDER VIDEOS
+========================= */
 
 function render() {
   $("#videoCount").textContent =
@@ -131,18 +179,34 @@ function render() {
                 : ""
             }>
               <div class="shade"></div>
-              <button class="play" onclick="openWatch('${v.id}')">▶</button>
-              <span class="plat">${type(v)}</span>
-              <span class="reward">${money(v.reward)}</span>
+
+              <button
+                class="play"
+                onclick="openWatch('${v.id}')"
+              >
+                ▶
+              </button>
+
+              <span class="plat">
+                ${type(v)}
+              </span>
+
+              <span class="reward">
+                ${money(v.reward)}
+              </span>
             </div>
 
             <div class="body">
-              <h3>${esc(v.title)}</h3>
+              <h3>
+                ${esc(v.title)}
+              </h3>
 
-              <p>${esc(
-                v.description ||
-                  "Watch and complete the task.",
-              )}</p>
+              <p>
+                ${esc(
+                  v.description ||
+                    "Watch and complete the task.",
+                )}
+              </p>
 
               <div class="meta">
                 ⏱ ${v.duration}s ${
@@ -156,7 +220,8 @@ function render() {
                 class="watchbtn"
                 onclick="openWatch('${v.id}')"
               >
-                Watch & earn <span>→</span>
+                Watch & earn
+                <span>→</span>
               </button>
             </div>
           </article>`;
@@ -164,6 +229,10 @@ function render() {
         .join("")
     : '<div class="empty">No live videos yet.</div>';
 }
+
+/* =========================
+   HISTORY
+========================= */
 
 function hist(a) {
   $("#historyCount").textContent =
@@ -176,7 +245,10 @@ function hist(a) {
             (x) =>
               `<div class="history">
                 <div>
-                  <b>${esc(x.title)}</b>
+                  <b>${esc(
+                    x.title,
+                  )}</b>
+
                   <small>${
                     x.claimedAt
                       ? new Date(
@@ -185,14 +257,21 @@ function hist(a) {
                       : ""
                   }</small>
                 </div>
-                <strong>+${money(
-                  x.reward,
-                )}</strong>
+
+                <strong>
+                  +${money(
+                    x.reward,
+                  )}
+                </strong>
               </div>`,
           )
           .join("")
       : '<div class="empty">Your completed videos appear here.</div>';
 }
+
+/* =========================
+   LOAD DASHBOARD
+========================= */
 
 async function load() {
   const me = await api(
@@ -200,6 +279,12 @@ async function load() {
   );
 
   user = me.user;
+
+  if (!user) {
+    throw Error(
+      "Authentication required",
+    );
+  }
 
   $("#balance").textContent =
     $("#heroBalance").textContent =
@@ -209,20 +294,22 @@ async function load() {
     "/api/videos",
   );
 
-  videos = v.videos;
+  videos = v.videos || [];
 
   render();
 
-  hist(
-    (
-      await api(
-        "/api/history",
-      )
-    ).history,
+  const h = await api(
+    "/api/history",
   );
+
+  hist(h.history || []);
 
   loadChat();
 }
+
+/* =========================
+   YOUTUBE
+========================= */
 
 function yt(s) {
   try {
@@ -231,9 +318,7 @@ function yt(s) {
     let id =
       u.hostname === "youtu.be"
         ? u.pathname.slice(1)
-        : u.searchParams.get(
-            "v",
-          );
+        : u.searchParams.get("v");
 
     if (
       !id &&
@@ -254,6 +339,10 @@ function yt(s) {
   }
 }
 
+/* =========================
+   TIKTOK
+========================= */
+
 function tt(s) {
   const m = String(s).match(
     /\/video\/(\d+)/,
@@ -263,6 +352,10 @@ function tt(s) {
     ? `https://www.tiktok.com/player/v1/${m[1]}?autoplay=1&description=1&music_info=1`
     : null;
 }
+
+/* =========================
+   VIDEO PLAYER
+========================= */
 
 function player(v) {
   const p = $("#player");
@@ -315,9 +408,9 @@ function player(v) {
   p.innerHTML = `<div class="external">
     <div>↗</div>
 
-    <h3>Open on ${esc(
-      type(v),
-    )}</h3>
+    <h3>
+      Open on ${esc(type(v))}
+    </h3>
 
     <p>
       This platform does not permit this post to play inside another website.
@@ -337,6 +430,10 @@ function player(v) {
     </small>
   </div>`;
 }
+
+/* =========================
+   OPEN VIDEO
+========================= */
 
 window.openWatch = (id) => {
   active = videos.find(
@@ -401,6 +498,10 @@ window.openWatch = (id) => {
   }, 1000);
 };
 
+/* =========================
+   CLOSE VIDEO
+========================= */
+
 function close() {
   clearInterval(timer);
 
@@ -423,7 +524,13 @@ $("#modal").onclick = (e) => {
   }
 };
 
+/* =========================
+   CLAIM REWARD
+========================= */
+
 $("#claim").onclick = async () => {
+  if (!active) return;
+
   try {
     const r = await api(
       "/api/videos/" +
@@ -456,16 +563,31 @@ $("#claim").onclick = async () => {
       )}!`,
     );
 
-    load();
+    await load();
+
   } catch (e) {
-    toast(e.message, false);
+    toast(
+      e.message,
+      false,
+    );
   }
 };
 
+/* =========================
+   REFRESH
+========================= */
+
 $("#refresh").onclick = () =>
   load().catch((e) =>
-    toast(e.message, false),
+    toast(
+      e.message,
+      false,
+    ),
   );
+
+/* =========================
+   LOGOUT
+========================= */
 
 $("#logout").onclick =
   async () => {
@@ -476,11 +598,24 @@ $("#logout").onclick =
           method: "POST",
         },
       );
+    } catch (e) {
+      console.warn(
+        "Logout request failed:",
+        e,
+      );
     } finally {
+      localStorage.removeItem(
+        "watchsave_token",
+      );
+
       location.href =
         "./login.html";
     }
   };
+
+/* =========================
+   USER CHAT
+========================= */
 
 async function loadChat() {
   try {
@@ -517,6 +652,7 @@ async function loadChat() {
                   ? "theirs"
                   : "system-msg"
             }">
+
               <span>${
                 m.sender ===
                 "admin"
@@ -527,21 +663,29 @@ async function loadChat() {
                     : "Watchsave"
               }</span>
 
-              <p>${esc(
-                m.text,
-              )}</p>
+              <p>
+                ${esc(m.text)}
+              </p>
 
-              <small>${new Date(
-                m.createdAt,
-              ).toLocaleString()}</small>
+              <small>
+                ${new Date(
+                  m.createdAt,
+                ).toLocaleString()}
+              </small>
+
             </div>`,
         )
         .join("");
 
     list.scrollTop =
       list.scrollHeight;
+
   } catch {}
 }
+
+/* =========================
+   SEND CHAT MESSAGE
+========================= */
 
 $("#userChatForm").onsubmit =
   async (e) => {
@@ -572,6 +716,7 @@ $("#userChatForm").onsubmit =
         "";
 
       await loadChat();
+
     } catch (x) {
       toast(
         x.message,
@@ -579,6 +724,10 @@ $("#userChatForm").onsubmit =
       );
     }
   };
+
+/* =========================
+   PRESENCE + CHAT REFRESH
+========================= */
 
 setInterval(() => {
   api("/api/presence", {
@@ -588,10 +737,24 @@ setInterval(() => {
   loadChat().catch(() => {});
 }, 30000);
 
+/* =========================
+   INITIAL LOAD
+========================= */
+
 (async () => {
   try {
     await load();
-  } catch {
+
+  } catch (e) {
+    console.error(
+      "Dashboard authentication failed:",
+      e,
+    );
+
+    localStorage.removeItem(
+      "watchsave_token",
+    );
+
     location.href =
       "./login.html";
   }
