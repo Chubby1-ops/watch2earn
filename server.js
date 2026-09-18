@@ -9,10 +9,17 @@ const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { v2: cloudinary } = require("cloudinary");
 
 const pool = require("./database");
 
 const app = express();
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -2544,6 +2551,7 @@ app.post(
 
 /* =========================
    UPLOAD VIDEO
+   CLOUDINARY VERSION
 ========================= */
 
 app.post(
@@ -2561,6 +2569,9 @@ app.post(
         });
     }
 
+    const tempFile =
+      req.file.path;
+
     const reward =
       Number(
         req.body.reward ??
@@ -2573,10 +2584,7 @@ app.post(
     ) {
       try {
         fs.unlinkSync(
-          path.join(
-            UPLOAD_DIR,
-            req.file.filename
-          )
+          tempFile
         );
       } catch {}
 
@@ -2605,9 +2613,7 @@ app.post(
 
       type: "upload",
 
-      source:
-        "/uploads/" +
-        req.file.filename,
+      source: "",
 
       reward,
 
@@ -2632,7 +2638,37 @@ app.post(
       createdAt: now(),
     };
 
+    let cloudinaryUploaded =
+      false;
+
     try {
+      console.log(
+        "Uploading video to Cloudinary..."
+      );
+
+      const uploaded =
+        await cloudinary.uploader.upload(
+          tempFile,
+          {
+            resource_type: "video",
+            folder: "watchsave/videos",
+            public_id: v.id,
+            overwrite: false,
+            type: "upload",
+          }
+        );
+
+      cloudinaryUploaded =
+        true;
+
+      v.source =
+        uploaded.secure_url;
+
+      console.log(
+        "✅ Cloudinary upload successful:",
+        v.source
+      );
+
       await pool.query(
         `
         INSERT INTO videos (
@@ -2665,18 +2701,51 @@ app.post(
         ]
       );
 
+      try {
+        fs.unlinkSync(
+          tempFile
+        );
+      } catch {}
+
+      console.log(
+        "✅ Video saved to PostgreSQL."
+      );
+
       res.json({
         video: pv(v),
       });
     } catch (err) {
       try {
         fs.unlinkSync(
-          path.join(
-            UPLOAD_DIR,
-            req.file.filename
-          )
+          tempFile
         );
       } catch {}
+
+      if (
+        cloudinaryUploaded
+      ) {
+        try {
+          await cloudinary.uploader.destroy(
+            `watchsave/videos/${v.id}`,
+            {
+              resource_type:
+                "video",
+              type: "upload",
+            }
+          );
+
+          console.log(
+            "Cloudinary upload rolled back."
+          );
+        } catch (
+          cloudinaryErr
+        ) {
+          console.error(
+            "CLOUDINARY ROLLBACK ERROR:",
+            cloudinaryErr
+          );
+        }
+      }
 
       console.error(
         "UPLOAD VIDEO ERROR:",
@@ -2685,7 +2754,7 @@ app.post(
 
       res.status(500).json({
         error:
-          "Could not save uploaded video.",
+          "Could not upload video.",
       });
     }
   }
@@ -2859,6 +2928,7 @@ app.patch(
 
 /* =========================
    DELETE VIDEO
+   CLOUDINARY VERSION
 ========================= */
 
 app.delete(
@@ -2892,22 +2962,59 @@ app.delete(
       const v =
         result.rows[0];
 
+      /*
+        Uploaded videos are stored on
+        Cloudinary using:
+
+        folder:
+          watchsave/videos
+
+        public_id:
+          v.id
+
+        So the complete Cloudinary
+        public ID is:
+
+        watchsave/videos/v.id
+      */
+
       if (
         v.type ===
         "upload"
       ) {
-        const f =
-          path.join(
-            UPLOAD_DIR,
-            path.basename(
-              v.source
-            )
+        try {
+          console.log(
+            "Deleting video from Cloudinary..."
           );
 
-        if (
-          fs.existsSync(f)
+          const cloudinaryResult =
+            await cloudinary.uploader.destroy(
+              `watchsave/videos/${v.id}`,
+              {
+                resource_type:
+                  "video",
+                type: "upload",
+              }
+            );
+
+          console.log(
+            "Cloudinary delete result:",
+            cloudinaryResult
+          );
+        } catch (
+          cloudinaryErr
         ) {
-          fs.unlinkSync(f);
+          console.error(
+            "CLOUDINARY DELETE ERROR:",
+            cloudinaryErr
+          );
+
+          return res
+            .status(500)
+            .json({
+              error:
+                "Could not delete video from Cloudinary.",
+            });
         }
       }
 
@@ -2917,6 +3024,10 @@ app.delete(
         WHERE id = $1
         `,
         [req.params.id]
+      );
+
+      console.log(
+        "✅ Video deleted from database."
       );
 
       res.json({
@@ -3211,6 +3322,10 @@ async function start() {
 
         console.log(
           `Upload directory: ${UPLOAD_DIR}`
+        );
+
+        console.log(
+          "Cloudinary: configured"
         );
       }
     );
