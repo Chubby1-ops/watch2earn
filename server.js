@@ -33,12 +33,32 @@ const DEFAULT_REWARD =
 const DEFAULT_DURATION =
   Number(process.env.DEFAULT_DURATION || 30);
 
-const WITHDRAW_UNLOCK_CLAIMS = 5;
-
 const SESSION_MAX_AGE =
   30 * 24 * 60 * 60 * 1000;
 
-const DATA_DIR = path.join(__dirname, "data");
+/* =========================
+   PERSISTENT STORAGE
+========================= */
+
+/*
+  On Render:
+    /var/data
+
+  Locally:
+    ./data
+
+  Render Persistent Disk should
+  be mounted at /var/data.
+*/
+
+const PERSISTENT_DIR = process.env.RENDER
+  ? "/var/data"
+  : path.join(__dirname, "data");
+
+const DATA_DIR = path.join(
+  PERSISTENT_DIR,
+  "data"
+);
 
 const DATA_FILE = path.join(
   DATA_DIR,
@@ -46,8 +66,7 @@ const DATA_FILE = path.join(
 );
 
 const UPLOAD_DIR = path.join(
-  __dirname,
-  "public",
+  PERSISTENT_DIR,
   "uploads"
 );
 
@@ -58,6 +77,10 @@ fs.mkdirSync(DATA_DIR, {
 fs.mkdirSync(UPLOAD_DIR, {
   recursive: true,
 });
+
+/* =========================
+   HELPERS
+========================= */
 
 const uid = (p) =>
   `${p}_${crypto.randomBytes(8).toString("hex")}`;
@@ -182,7 +205,6 @@ function ensureAdmin() {
       joinedAt: now(),
       lastLoginAt: null,
       lastSeen: null,
-      withdrawUnlockClaims: 0,
     });
 
     save();
@@ -360,17 +382,6 @@ function token(
   );
 }
 
-/*
-  Authentication supports BOTH:
-
-  1. Authorization: Bearer TOKEN
-  2. HTTP-only ws_token cookie
-
-  Bearer token is checked first because
-  GitHub Pages and Render are different
-  domains.
-*/
-
 function getAuthToken(req) {
   const authorization =
     String(
@@ -517,11 +528,6 @@ const pub = (u) => ({
   lastLoginAt:
     u.lastLoginAt,
   lastSeen: u.lastSeen,
-  withdrawUnlockClaims:
-    Number(
-      u.withdrawUnlockClaims ||
-        0
-    ),
 });
 
 /* =========================
@@ -652,8 +658,6 @@ app.post(
 
         lastSeen:
           timestamp,
-
-        withdrawUnlockClaims: 0,
       };
 
       const sid =
@@ -1042,12 +1046,6 @@ app.post(
         });
     }
 
-    const balanceBefore =
-      Number(
-        req.user.balance ||
-          0
-      );
-
     v.claims.push(
       req.user.id
     );
@@ -1057,28 +1055,12 @@ app.post(
     ] = now();
 
     req.user.balance =
-      balanceBefore +
+      Number(
+        req.user.balance || 0
+      ) +
       Number(
         v.reward || 0
       );
-
-    if (
-      balanceBefore >=
-        MIN_WITHDRAWAL &&
-      Number(
-        req.user
-          .withdrawUnlockClaims ||
-          0
-      ) <
-        WITHDRAW_UNLOCK_CLAIMS
-    ) {
-      req.user.withdrawUnlockClaims =
-        Number(
-          req.user
-            .withdrawUnlockClaims ||
-            0
-        ) + 1;
-    }
 
     save();
 
@@ -1089,14 +1071,6 @@ app.post(
       ),
       balance:
         req.user.balance,
-      withdrawUnlockClaims:
-        Number(
-          req.user
-            .withdrawUnlockClaims ||
-            0
-        ),
-      withdrawUnlockNeeded:
-        WITHDRAW_UNLOCK_CLAIMS,
     });
   }
 );
@@ -1136,12 +1110,10 @@ app.get(
         a.sort(
           (a, b) =>
             new Date(
-              b.claimedAt ||
-                0
+              b.claimedAt || 0
             ) -
             new Date(
-              a.claimedAt ||
-                0
+              a.claimedAt || 0
             )
         ),
     });
@@ -1231,13 +1203,6 @@ app.post(
           ""
       ).trim();
 
-    const progress =
-      Number(
-        req.user
-          .withdrawUnlockClaims ||
-          0
-      );
-
     if (
       !Number.isFinite(
         amount
@@ -1264,22 +1229,6 @@ app.post(
         .json({
           error:
             "Insufficient funds. The amount you entered is higher than your available balance.",
-        });
-    }
-
-    if (
-      Number(
-        req.user.balance ||
-          0
-      ) >=
-        MIN_WITHDRAWAL &&
-      progress <
-        WITHDRAW_UNLOCK_CLAIMS
-    ) {
-      return res
-        .status(400)
-        .json({
-          error: `Watch ${WITHDRAW_UNLOCK_CLAIMS - progress} more ads before requesting withdrawal.`,
         });
     }
 
@@ -2388,6 +2337,14 @@ app.listen(
   () => {
     console.log(
       `Watchsave running on port ${PORT}`
+    );
+
+    console.log(
+      `Data directory: ${DATA_DIR}`
+    );
+
+    console.log(
+      `Upload directory: ${UPLOAD_DIR}`
     );
   }
 );
