@@ -1,160 +1,906 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1"
+    />
+
     <title>Watchsave Admin</title>
+
     <link rel="stylesheet" href="./css/style.css" />
+
+    <style>
+      /* =====================================================
+         ADMIN MOBILE LAYOUT
+         ===================================================== */
+
+      .admin-mobile-menu {
+        display: none;
+      }
+
+      .admin-mobile-menu button {
+        width: 100%;
+      }
+
+      /* Keep admin content from becoming too wide */
+      .admin {
+        width: min(1240px, 92%);
+        margin: 45px auto;
+      }
+
+      .admin-card {
+        min-width: 0;
+      }
+
+      .admin-card input,
+      .admin-card textarea,
+      .admin-card select {
+        max-width: 100%;
+      }
+
+      .admin-card input[type="file"] {
+        width: 100%;
+        cursor: pointer;
+      }
+
+      /* =====================================================
+         TABLET
+         ===================================================== */
+
+      @media (max-width: 900px) {
+
+        .admin {
+          width: 94%;
+          margin: 30px auto;
+        }
+
+        .forms {
+          grid-template-columns: 1fr;
+        }
+
+        .stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .tabs {
+          overflow-x: auto;
+          white-space: nowrap;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
+        }
+
+        .tabs::-webkit-scrollbar {
+          display: none;
+        }
+
+        .tab {
+          flex: 0 0 auto;
+        }
+      }
+
+      /* =====================================================
+         PHONE
+         ===================================================== */
+
+      @media (max-width: 600px) {
+
+        /* TOP BAR */
+
+        .topbar {
+          height: 64px;
+          padding: 0 12px;
+          gap: 10px;
+        }
+
+        .topbar .logo {
+          font-size: 19px;
+        }
+
+        .topbar nav {
+          display: none;
+        }
+
+        .topbar #logout {
+          margin-left: auto;
+          padding: 9px 12px;
+          font-size: 12px;
+          min-height: 40px;
+        }
+
+
+        /* MAIN ADMIN AREA */
+
+        .admin {
+          width: 100%;
+          margin: 0;
+          padding: 20px 12px 45px;
+        }
+
+
+        /* HEADER */
+
+        .admin-head {
+          display: flex;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 12px;
+          margin-bottom: 18px;
+        }
+
+        .admin-head h1 {
+          font-size: 30px;
+          line-height: 1.1;
+        }
+
+        .admin-head p {
+          font-size: 13px;
+          line-height: 1.5;
+        }
+
+        .online {
+          width: 100%;
+          text-align: center;
+          font-size: 12px;
+          padding: 11px;
+        }
+
+
+        /* TABS */
+
+        .tabs {
+          display: flex;
+          width: 100%;
+          overflow-x: auto;
+          overflow-y: hidden;
+          gap: 6px;
+          margin-top: 20px;
+          padding-bottom: 10px;
+
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
+        }
+
+        .tabs::-webkit-scrollbar {
+          display: none;
+        }
+
+        .tab {
+          flex: 0 0 auto;
+          white-space: nowrap;
+          padding: 12px 14px;
+          min-height: 43px;
+          font-size: 12px;
+        }
+
+
+        /* PANELS */
+
+        .pane {
+          padding: 20px 0;
+        }
+
+
+        /* STATISTICS */
+
+        .stats {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 9px;
+        }
+
+        .stats > div {
+          padding: 14px 10px;
+          border-radius: 15px;
+        }
+
+        .stats small {
+          font-size: 8px;
+        }
+
+        .stats b {
+          font-size: 25px;
+          margin-top: 7px;
+        }
+
+
+        /* NOTICE */
+
+        .notice {
+          font-size: 12px;
+          line-height: 1.5;
+          padding: 13px;
+        }
+
+
+        /* VIDEO FORMS */
+
+        .forms {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 14px;
+        }
+
+        .admin-card {
+          padding: 17px;
+          border-radius: 17px;
+          margin-bottom: 14px;
+        }
+
+        .admin-card h2 {
+          font-size: 19px;
+          line-height: 1.3;
+        }
+
+        .admin-card p {
+          font-size: 12px;
+          line-height: 1.5;
+        }
+
+
+        /* INPUTS */
+
+        .admin-card input,
+        .admin-card textarea,
+        .admin-card select {
+          width: 100%;
+          max-width: 100%;
+          font-size: 16px;
+        }
+
+        .admin-card input {
+          min-height: 48px;
+        }
+
+        .admin-card textarea {
+          min-height: 90px;
+        }
+
+
+        /* REWARD / DURATION */
+
+        .two {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 10px;
+        }
+
+        .two label {
+          display: block;
+          width: 100%;
+        }
+
+        .two label input {
+          display: block;
+          width: 100%;
+          margin-top: 6px;
+        }
+
+
+        /* PHONE VIDEO SELECTOR */
+
+        .admin-card input[type="file"] {
+          display: block;
+          width: 100%;
+          min-height: 55px;
+          padding: 10px;
+          font-size: 13px;
+          background: #090909;
+          border: 1px solid #333;
+          border-radius: 11px;
+        }
+
+
+        /* UPLOAD BUTTON */
+
+        .admin-card .primary {
+          width: 100%;
+          min-height: 51px;
+          font-size: 14px;
+        }
+
+
+        /* VIDEO LIST */
+
+        #videoList {
+          width: 100%;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+
+
+        /* USERS */
+
+        #usersList {
+          width: 100%;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+
+
+        /* WITHDRAWALS */
+
+        #wdList {
+          width: 100%;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+
+
+        /* CHAT */
+
+        #chatList {
+          width: 100%;
+        }
+
+        .chat-card {
+          padding: 13px;
+        }
+
+        .chat-form {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .chat-form input {
+          width: 100%;
+          min-height: 48px;
+          font-size: 16px;
+        }
+
+        .chat-form button {
+          width: 100%;
+          min-height: 47px;
+        }
+
+
+        /* REFRESH BUTTONS */
+
+        .rowhead {
+          display: flex;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 12px;
+        }
+
+        .rowhead .ghost {
+          width: 100%;
+          min-height: 45px;
+        }
+
+
+        /* TABLE-STYLE CONTENT */
+
+        .table {
+          min-width: 600px;
+        }
+
+        .user {
+          min-width: 600px;
+        }
+      }
+
+
+      /* =====================================================
+         VERY SMALL PHONES
+         ===================================================== */
+
+      @media (max-width: 380px) {
+
+        .admin {
+          padding-left: 9px;
+          padding-right: 9px;
+        }
+
+        .admin-head h1 {
+          font-size: 27px;
+        }
+
+        .stats {
+          gap: 7px;
+        }
+
+        .stats > div {
+          padding: 12px 8px;
+        }
+
+        .stats b {
+          font-size: 21px;
+        }
+
+        .tab {
+          padding: 10px 11px;
+          font-size: 11px;
+        }
+
+        .admin-card {
+          padding: 14px;
+        }
+      }
+    </style>
   </head>
+
   <body>
+
+    <!-- =====================================================
+         TOP BAR
+         ===================================================== -->
+
     <header class="topbar">
-      <a class="logo" href="/">WATCH<span>SAVE</span></a>
-      <nav><a href="./index.html">View site</a></nav>
-      <button id="logout" class="ghost">Logout</button>
+
+      <a class="logo" href="/">
+        WATCH<span>SAVE</span>
+      </a>
+
+      <nav>
+        <a href="./index.html">View site</a>
+      </nav>
+
+      <button id="logout" class="ghost" type="button">
+        Logout
+      </button>
+
     </header>
+
+
+    <!-- =====================================================
+         ADMIN
+         ===================================================== -->
+
     <main class="admin">
+
+      <!-- HEADER -->
+
       <div class="admin-head">
+
         <div>
-          <div class="eyebrow">CONTROL CENTER</div>
-          <h1>Watchsave Admin</h1>
-          <p>Videos, rewards, tasks, users and withdrawals.</p>
+
+          <div class="eyebrow">
+            CONTROL CENTER
+          </div>
+
+          <h1>
+            Watchsave Admin
+          </h1>
+
+          <p>
+            Videos, rewards, tasks, users and withdrawals.
+          </p>
+
         </div>
-        <div class="online">● <b id="topOnline">0</b> users online</div>
+
+        <div class="online">
+          ● <b id="topOnline">0</b> users online
+        </div>
+
       </div>
+
+
+      <!-- ===================================================
+           TABS
+           =================================================== -->
+
       <div class="tabs">
-        <button class="tab active" data-tab="dash">Dashboard</button
-        ><button class="tab" data-tab="vids">Videos</button
-        ><button class="tab" data-tab="users">Users</button
-        ><button class="tab" data-tab="wd">Withdrawals</button
-        ><button class="tab" data-tab="chats">Chats</button>
+
+        <button
+          class="tab active"
+          data-tab="dash"
+          type="button"
+        >
+          Dashboard
+        </button>
+
+        <button
+          class="tab"
+          data-tab="vids"
+          type="button"
+        >
+          Videos
+        </button>
+
+        <button
+          class="tab"
+          data-tab="users"
+          type="button"
+        >
+          Users
+        </button>
+
+        <button
+          class="tab"
+          data-tab="wd"
+          type="button"
+        >
+          Withdrawals
+        </button>
+
+        <button
+          class="tab"
+          data-tab="chats"
+          type="button"
+        >
+          Chats
+        </button>
+
       </div>
-      <section id="dash" class="pane active">
+
+
+      <!-- ===================================================
+           DASHBOARD
+           =================================================== -->
+
+      <section
+        id="dash"
+        class="pane active"
+      >
+
         <div class="stats">
-          <div><small>REGISTERED</small><b id="su">0</b></div>
-          <div><small>ONLINE</small><b id="so">0</b></div>
-          <div><small>LIVE VIDEOS</small><b id="sv">0</b></div>
-          <div><small>PENDING PAYOUTS</small><b id="sp">0</b></div>
+
+          <div>
+            <small>REGISTERED</small>
+            <b id="su">0</b>
+          </div>
+
+          <div>
+            <small>ONLINE</small>
+            <b id="so">0</b>
+          </div>
+
+          <div>
+            <small>LIVE VIDEOS</small>
+            <b id="sv">0</b>
+          </div>
+
+          <div>
+            <small>PENDING PAYOUTS</small>
+            <b id="sp">0</b>
+          </div>
+
         </div>
+
         <div class="notice">
-          Passwords are never displayed in the admin panel. You can see
-          registration/contact/activity information and remove an account.
+
+          Passwords are never displayed in the admin panel.
+          You can see registration/contact/activity information
+          and remove an account.
+
         </div>
+
       </section>
-      <section id="vids" class="pane">
+
+
+      <!-- ===================================================
+           VIDEOS
+           =================================================== -->
+
+      <section
+        id="vids"
+        class="pane"
+      >
+
         <div class="forms">
+
+
+          <!-- URL VIDEO -->
+
           <div class="admin-card">
-            <h2>Add social / website URL</h2>
+
+            <h2>
+              Add social / website URL
+            </h2>
+
             <p>
-              Works with TikTok, YouTube, Facebook, Instagram and other
-              HTTP/HTTPS URLs. Some sites block embedding, so the user gets an
-              open-video button instead.
+              Works with TikTok, YouTube, Facebook, Instagram
+              and other HTTP/HTTPS URLs. Some sites block
+              embedding, so the user gets an open-video button
+              instead.
             </p>
+
             <form id="urlForm">
-              <input name="title" placeholder="Video title" required /><textarea
+
+              <input
+                name="title"
+                placeholder="Video title"
+                required
+              />
+
+              <textarea
                 name="description"
                 placeholder="Description"
-              ></textarea
-              ><input name="source" placeholder="https://..." required />
+              ></textarea>
+
+              <input
+                name="source"
+                placeholder="https://..."
+                required
+              />
+
               <div class="two">
-                <label
-                  >Reward ₦<input
+
+                <label>
+                  Reward ₦
+
+                  <input
                     name="reward"
                     type="number"
                     min="0"
-                    value="50" /></label
-                ><label
-                  >Duration seconds<input
+                    value="50"
+                  />
+
+                </label>
+
+                <label>
+                  Duration seconds
+
+                  <input
                     name="duration"
                     type="number"
                     min="5"
                     value="30"
-                /></label>
+                  />
+
+                </label>
+
               </div>
+
               <textarea
                 name="command"
                 placeholder="Command / task: Follow @yourpage on TikTok, then watch the video."
-              ></textarea
-              ><button class="primary">Publish URL video</button>
+              ></textarea>
+
+              <button
+                class="primary"
+                type="submit"
+              >
+                Publish URL video
+              </button>
+
             </form>
+
           </div>
+
+
+          <!-- =================================================
+               UPLOAD OWN VIDEO
+               ================================================= -->
+
           <div class="admin-card">
-            <h2>Upload your own video</h2>
+
+            <h2>
+              Upload your own video
+            </h2>
+
             <p>
-              MP4, WebM, OGG, MOV or M4V. Maximum 250 MB in this local build.
+              MP4, WebM, OGG, MOV or M4V.
+              Maximum 250 MB in this local build.
             </p>
-            <form id="uploadForm" enctype="multipart/form-data">
-              <input name="title" placeholder="Video title" /><textarea
+
+            <form
+              id="uploadForm"
+              enctype="multipart/form-data"
+            >
+
+              <input
+                name="title"
+                placeholder="Video title"
+                autocomplete="off"
+              />
+
+              <textarea
                 name="description"
                 placeholder="Description"
-              ></textarea
-              ><input name="video" type="file" accept="video/*" required />
+              ></textarea>
+
+
+              <!-- PHONE VIDEO PICKER -->
+
+              <label>
+                Video file
+
+                <input
+                  name="video"
+                  type="file"
+                  accept="video/*,.mp4,.webm,.ogg,.mov,.m4v"
+                  required
+                />
+
+              </label>
+
+
               <div class="two">
-                <label
-                  >Reward ₦<input
+
+                <label>
+                  Reward ₦
+
+                  <input
                     name="reward"
                     type="number"
                     min="0"
-                    value="50" /></label
-                ><label
-                  >Duration seconds<input
+                    value="50"
+                  />
+
+                </label>
+
+                <label>
+                  Duration seconds
+
+                  <input
                     name="duration"
                     type="number"
                     min="5"
                     value="30"
-                /></label>
+                  />
+
+                </label>
+
               </div>
+
+
               <textarea
                 name="command"
                 placeholder="Command / task for viewers"
-              ></textarea
-              ><button class="primary">Upload & publish</button>
+              ></textarea>
+
+
+              <button
+                class="primary"
+                type="submit"
+              >
+                Upload &amp; publish
+              </button>
+
             </form>
+
           </div>
+
         </div>
+
+
+        <!-- VIDEO LIBRARY -->
+
         <div class="admin-card">
-          <h2>Video library</h2>
-          <p>Edit the reward and duration for any video.</p>
+
+          <h2>
+            Video library
+          </h2>
+
+          <p>
+            Edit the reward and duration for any video.
+          </p>
+
           <div id="videoList"></div>
+
         </div>
+
       </section>
-      <section id="users" class="pane">
+
+
+      <!-- ===================================================
+           USERS
+           =================================================== -->
+
+      <section
+        id="users"
+        class="pane"
+      >
+
         <div class="admin-card">
+
           <div class="rowhead">
+
             <div>
-              <h2>Users</h2>
+
+              <h2>
+                Users
+              </h2>
+
               <p>
-                New registrations appear here. Online status refreshes
-                automatically.
+                New registrations appear here.
+                Online status refreshes automatically.
               </p>
+
             </div>
-            <button id="refreshUsers" class="ghost">↻ Refresh</button>
+
+            <button
+              id="refreshUsers"
+              class="ghost"
+              type="button"
+            >
+              ↻ Refresh
+            </button>
+
           </div>
+
           <div id="usersList"></div>
+
         </div>
+
       </section>
-      <section id="wd" class="pane">
+
+
+      <!-- ===================================================
+           WITHDRAWALS
+           =================================================== -->
+
+      <section
+        id="wd"
+        class="pane"
+      >
+
         <div class="admin-card">
-          <h2>Withdrawal requests</h2>
+
+          <h2>
+            Withdrawal requests
+          </h2>
+
           <div id="wdList"></div>
+
         </div>
+
       </section>
-      <section id="chats" class="pane">
+
+
+      <!-- ===================================================
+           CHATS
+           =================================================== -->
+
+      <section
+        id="chats"
+        class="pane"
+      >
+
         <div class="admin-card">
+
           <div class="rowhead">
+
             <div>
-              <h2>Private user chats</h2>
+
+              <h2>
+                Private user chats
+              </h2>
+
               <p>
-                Only you can send messages from this area. Each chat belongs to
-                one user.
+                Only you can send messages from this area.
+                Each chat belongs to one user.
               </p>
+
             </div>
-            <button id="refreshChats" class="ghost">↻ Refresh</button>
+
+            <button
+              id="refreshChats"
+              class="ghost"
+              type="button"
+            >
+              ↻ Refresh
+            </button>
+
           </div>
-          <div id="chatList" class="chat-list"></div>
+
+          <div
+            id="chatList"
+            class="chat-list"
+          ></div>
+
         </div>
+
       </section>
+
     </main>
-    <div id="toast" class="toast"></div>
+
+
+    <!-- TOAST -->
+
+    <div
+      id="toast"
+      class="toast"
+    ></div>
+
+
+    <!-- ADMIN JS -->
+
     <script src="./js/admin.js"></script>
+
   </body>
 </html>

@@ -1,7 +1,6 @@
 const BACKEND_URL = "https://watch2earn-d9im.onrender.com";
 
-const $ = (s) =>
-  document.querySelector(s);
+const $ = (s) => document.querySelector(s);
 
 const money = (n) =>
   `₦${Number(n || 0).toFixed(2)}`;
@@ -24,9 +23,11 @@ const esc = (s) =>
 ========================= */
 
 function getToken() {
-  return localStorage.getItem(
-    "watchsave_token",
-  ) || "";
+  return (
+    localStorage.getItem(
+      "watchsave_token",
+    ) || ""
+  );
 }
 
 /* =========================
@@ -48,6 +49,7 @@ async function api(u, o = {}) {
   }
 
   /*
+    IMPORTANT:
     Do NOT manually set Content-Type
     when sending FormData.
   */
@@ -147,26 +149,30 @@ document
         if (
           b.dataset.tab ===
           "users"
-        )
+        ) {
           users();
+        }
 
         if (
           b.dataset.tab ===
           "vids"
-        )
+        ) {
           videos();
+        }
 
         if (
           b.dataset.tab ===
           "wd"
-        )
+        ) {
           withdrawals();
+        }
 
         if (
           b.dataset.tab ===
           "chats"
-        )
+        ) {
           chats();
+        }
       }),
   );
 
@@ -668,6 +674,7 @@ async function chats() {
                   class="chat-form admin-chat-form"
                   data-chat="${c.id}"
                 >
+
                   <input
                     maxlength="2000"
                     placeholder="Message ${esc(
@@ -676,7 +683,10 @@ async function chats() {
                     required
                   >
 
-                  <button class="primary">
+                  <button
+                    class="primary"
+                    type="submit"
+                  >
                     Send
                   </button>
 
@@ -794,6 +804,34 @@ $("#urlForm").onsubmit =
   };
 
 /* =========================
+   PHONE VIDEO SELECTION
+========================= */
+
+const videoInput =
+  document.querySelector(
+    '#uploadForm input[name="video"]',
+  );
+
+if (videoInput) {
+  videoInput.addEventListener(
+    "change",
+    () => {
+      const file =
+        videoInput.files?.[0];
+
+      if (!file) return;
+
+      console.log(
+        "Selected video:",
+        file.name,
+        file.size,
+        file.type,
+      );
+    },
+  );
+}
+
+/* =========================
    UPLOAD VIDEO
 ========================= */
 
@@ -801,36 +839,183 @@ $("#uploadForm").onsubmit =
   async (e) => {
     e.preventDefault();
 
+    const form = e.target;
+
+    const button =
+      form.querySelector(
+        'button[type="submit"]',
+      );
+
+    const fileInput =
+      form.querySelector(
+        'input[name="video"]',
+      );
+
+    const file =
+      fileInput?.files?.[0];
+
+    /* --------------------------------
+       CHECK VIDEO
+    -------------------------------- */
+
+    if (!file) {
+      toast(
+        "Please select a video first.",
+        false,
+      );
+
+      return;
+    }
+
+    /* --------------------------------
+       MAXIMUM 250 MB
+    -------------------------------- */
+
+    const MAX_SIZE =
+      250 * 1024 * 1024;
+
+    if (file.size > MAX_SIZE) {
+      toast(
+        "Video is too large. Maximum size is 250 MB.",
+        false,
+      );
+
+      return;
+    }
+
+    /* --------------------------------
+       VIDEO TYPE CHECK
+    -------------------------------- */
+
+    if (
+      !file.type.startsWith(
+        "video/",
+      )
+    ) {
+      toast(
+        "Please select a valid video file.",
+        false,
+      );
+
+      return;
+    }
+
+    /* --------------------------------
+       PREVENT DOUBLE UPLOAD
+    -------------------------------- */
+
+    if (button) {
+      button.disabled = true;
+      button.dataset.oldText =
+        button.textContent;
+      button.textContent =
+        "Uploading...";
+      button.style.opacity =
+        "0.7";
+      button.style.cursor =
+        "wait";
+    }
+
     try {
+      /*
+        IMPORTANT:
+
+        Do NOT set Content-Type manually.
+
+        FormData automatically creates
+        the multipart/form-data boundary.
+      */
+
+      const formData =
+        new FormData(form);
+
       await api(
         "/api/admin/videos/upload",
         {
           method: "POST",
-          body: new FormData(
-            e.target,
-          ),
+          body: formData,
         },
       );
 
-      e.target.reset();
+      /* --------------------------------
+         RESET FORM
+      -------------------------------- */
 
-      e.target.reward.value =
-        50;
+      form.reset();
 
-      e.target.duration.value =
-        30;
+      if (form.reward) {
+        form.reward.value =
+          50;
+      }
+
+      if (form.duration) {
+        form.duration.value =
+          30;
+      }
 
       toast(
-        "Video uploaded.",
+        "Video uploaded successfully.",
       );
 
-      videos();
-      stats();
+      /* --------------------------------
+         REFRESH VIDEO LIBRARY
+      -------------------------------- */
+
+      await videos();
+
+      /* --------------------------------
+         REFRESH STATISTICS
+      -------------------------------- */
+
+      await stats();
+
     } catch (x) {
+      console.error(
+        "Video upload failed:",
+        x,
+      );
+
+      let message =
+        x.message ||
+        "Video upload failed. Please try again.";
+
+      /*
+        Give a more useful message
+        for common network problems.
+      */
+
+      if (
+        message
+          .toLowerCase()
+          .includes("failed to fetch")
+      ) {
+        message =
+          "Cannot connect to the Watchsave server. Check your internet connection and Render backend.";
+      }
+
       toast(
-        x.message,
+        message,
         false,
       );
+
+    } finally {
+      /* --------------------------------
+         RESTORE BUTTON
+      -------------------------------- */
+
+      if (button) {
+        button.disabled = false;
+
+        button.textContent =
+          button.dataset.oldText ||
+          "Upload & publish";
+
+        button.style.opacity =
+          "";
+
+        button.style.cursor =
+          "";
+      }
     }
   };
 
