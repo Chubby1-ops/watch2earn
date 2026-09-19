@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+
+  <title>Watchsave Admin Login</title>
+
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+
+<body class="auth">
+
+  <div class="auth-card">
+
+    <a class="logo" href="./index.html">
+      WATCH<span>SAVE</span>
+    </a>
+
+    <div class="eyebrow">
+      ADMIN ACCESS
+    </div>
+
+    <h1>Admin Dashboard</h1>
+
+    <p>
+      Enter the administrator password to continue.
+    </p>
+
+    <form id="adminLoginForm">
+
+      <label>
+        Admin password
+
+        <input
+          id="adminPassword"
+          type="password"
+          placeholder="Enter admin password"
+          autocomplete="current-password"
+          required
+        >
+      </label>
+
+      <button
+        id="adminLoginButton"
+        class="primary"
+        type="submit"
+      >
+        Enter Dashboard
+      </button>
+
+      <div
+        id="adminLoginMessage"
+        class="form-hint"
+      ></div>
+
+    </form>
+
+    <p style="margin-top:20px;">
+      <a href="./login.html">
+        ← Back to normal login
+      </a>
+    </p>
+
+  </div>
+
+  <script src="./js/admin-login.js"></script>
+
+</body>
+</html>

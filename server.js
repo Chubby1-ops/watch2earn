@@ -948,6 +948,152 @@ app.post(
 
 
 /* =========================
+   ADMIN PASSWORD LOGIN
+========================= */
+
+app.post(
+  "/api/admin/login",
+  async (req, res) => {
+    try {
+      const password =
+        String(
+          req.body?.password || ""
+        );
+
+      if (!password) {
+        return res.status(400).json({
+          error:
+            "Admin password is required.",
+        });
+      }
+
+      const result =
+        await pool.query(
+          `
+          SELECT *
+          FROM users
+          WHERE LOWER(email) = $1
+          AND is_admin = TRUE
+          AND deleted = FALSE
+          LIMIT 1
+          `,
+          [ADMIN_EMAIL]
+        );
+
+      if (
+        result.rows.length === 0
+      ) {
+        return res.status(401).json({
+          error:
+            "Admin account not found.",
+        });
+      }
+
+      const row =
+        result.rows[0];
+
+      const passwordOk =
+        await bcrypt.compare(
+          password,
+          row.password_hash
+        );
+
+      if (!passwordOk) {
+        return res.status(401).json({
+          error:
+            "Incorrect admin password.",
+        });
+      }
+
+      const timestamp =
+        now();
+
+      const sid =
+        uid("ses");
+
+      await pool.query(
+        `
+        INSERT INTO sessions (
+          id,
+          user_id,
+          created_at,
+          last_seen
+        )
+        VALUES ($1,$2,$3,$4)
+        `,
+        [
+          sid,
+          row.id,
+          timestamp,
+          timestamp,
+        ]
+      );
+
+      await pool.query(
+        `
+        UPDATE users
+        SET
+          last_login_at = $1,
+          last_seen = $1
+        WHERE id = $2
+        `,
+        [
+          timestamp,
+          row.id,
+        ]
+      );
+
+      const u = {
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        phone: row.phone || "",
+        balance: Number(
+          row.balance || 0
+        ),
+        isAdmin: true,
+        joinedAt: row.joined_at,
+        lastLoginAt: timestamp,
+        lastSeen: timestamp,
+      };
+
+      const accessToken =
+        token(u, sid);
+
+      res.cookie(
+        "ws_token",
+        accessToken,
+        {
+          httpOnly: true,
+          sameSite: "none",
+          secure: true,
+          maxAge:
+            SESSION_MAX_AGE,
+          path: "/",
+        }
+      );
+
+      return res.json({
+        ok: true,
+        token: accessToken,
+        user: pub(u),
+      });
+    } catch (err) {
+      console.error(
+        "ADMIN LOGIN ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        error:
+          "Admin login failed. Please try again.",
+      });
+    }
+  }
+);
+
+
+/* =========================
    LOGOUT
 ========================= */
 
