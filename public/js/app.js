@@ -124,8 +124,13 @@ function type(v) {
 ========================= */
 
 function thumb(v) {
+  /*
+    Cloudinary uploads already have
+    a complete HTTPS URL in v.source.
+    Do NOT add BACKEND_URL.
+  */
   if (v.type === "upload") {
-    return BACKEND_URL + v.source;
+    return v.source;
   }
 
   try {
@@ -362,14 +367,18 @@ function player(v) {
 
   p.innerHTML = "";
 
+  /*
+    Cloudinary video:
+    v.source is already the full
+    Cloudinary HTTPS URL.
+  */
   if (v.type === "upload") {
     const x =
       document.createElement(
         "video",
       );
 
-    x.src =
-      BACKEND_URL + v.source;
+    x.src = v.source;
 
     x.controls = true;
     x.autoplay = true;
@@ -725,7 +734,7 @@ $("#userChatForm").onsubmit =
     }
   };
 
-  /* =========================
+/* =========================
    WITHDRAWAL
 ========================= */
 
