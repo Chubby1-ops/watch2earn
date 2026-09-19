@@ -1,3 +1,4 @@
+
 require("dotenv").config();
 
 const express = require("express");
@@ -247,6 +248,7 @@ app.use(cookieParser());
 ========================= */
 
 const allowedOrigins = [
+  "https://watchsave.name.ng",
   "https://chubby1-ops.github.io",
   "http://localhost:3000",
   "http://127.0.0.1:3000",
@@ -2962,22 +2964,6 @@ app.delete(
       const v =
         result.rows[0];
 
-      /*
-        Uploaded videos are stored on
-        Cloudinary using:
-
-        folder:
-          watchsave/videos
-
-        public_id:
-          v.id
-
-        So the complete Cloudinary
-        public ID is:
-
-        watchsave/videos/v.id
-      */
-
       if (
         v.type ===
         "upload"
@@ -3341,3 +3327,4 @@ async function start() {
 }
 
 start();
+
