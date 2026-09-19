@@ -1891,3 +1891,176 @@ main {
     scroll-behavior: auto !important;
   }
 }
+/* =========================================================
+   WATCHSAVE — MOBILE HAMBURGER MENU
+   ========================================================= */
+
+.mobile-menu {
+  display: none;
+  position: relative;
+  margin-left: auto;
+  z-index: 1000;
+}
+
+.mobile-menu-button {
+  width: 44px !important;
+  height: 44px;
+  padding: 0 !important;
+  border: 1px solid #333;
+  border-radius: 10px;
+  background: #111;
+  color: #fff;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition:
+    background 0.25s ease,
+    border-color 0.25s ease,
+    transform 0.25s ease;
+}
+
+.mobile-menu-button:hover {
+  background: #1c1c1c;
+  border-color: #ff6b00;
+}
+
+.mobile-menu-button:active {
+  transform: scale(0.94);
+}
+
+.mobile-menu-dropdown {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: 52px;
+  width: 215px;
+  padding: 8px;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 14px;
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.6),
+    0 0 25px rgba(255, 107, 0, 0.08);
+  z-index: 9999;
+}
+
+.mobile-menu-dropdown.show {
+  display: block;
+  animation: mobileMenuEnter 0.18s ease both;
+}
+
+@keyframes mobileMenuEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-7px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mobile-menu-dropdown a,
+.mobile-menu-dropdown button {
+  display: block;
+  width: 100%;
+  min-height: 45px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #fff;
+  text-align: left;
+  text-decoration: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    padding-left 0.2s ease;
+}
+
+.mobile-menu-dropdown a:hover,
+.mobile-menu-dropdown button:hover {
+  background: #1e1e1e;
+  color: #fff;
+  padding-left: 18px;
+}
+
+.mobile-menu-dropdown .mobile-admin {
+  color: #ff7a16;
+}
+
+.mobile-menu-dropdown .mobile-admin:hover {
+  background: #241307;
+  color: #ff8b1a;
+}
+
+.mobile-menu-dropdown .mobile-logout {
+  color: #ff8068;
+}
+
+.mobile-menu-dropdown .mobile-logout:hover {
+  background: #24100d;
+  color: #ff8b78;
+}
+
+
+/* =========================================================
+   MOBILE PHONE
+   ========================================================= */
+
+@media (max-width: 600px) {
+
+  .topbar {
+    height: 64px;
+    padding: 0 12px;
+    gap: 10px;
+  }
+
+  /* Hide desktop navigation */
+  .topbar nav {
+    display: none !important;
+  }
+
+  /* Hide desktop balance/logout */
+  .top-user {
+    display: none !important;
+  }
+
+  /* Show hamburger */
+  .mobile-menu {
+    display: block;
+    margin-left: auto;
+  }
+
+  .logo {
+    font-size: 20px;
+  }
+}
+
+
+/* =========================================================
+   VERY SMALL PHONES
+   ========================================================= */
+
+@media (max-width: 380px) {
+
+  .topbar {
+    padding: 0 10px;
+  }
+
+  .logo {
+    font-size: 18px;
+  }
+
+  .mobile-menu-dropdown {
+    width: 200px;
+  }
+}
