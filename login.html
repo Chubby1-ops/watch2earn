@@ -1,0 +1,210 @@
+<!doctype html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1"
+    />
+    <title>Watchsave Login</title>
+
+
+<link
+  rel="stylesheet"
+  href="./css/style.css"
+/>
+
+  </head>
+
+  <body class="auth">
+
+<div class="auth-card">
+
+  <a
+    class="logo"
+    href="./index.html"
+  >
+    WATCH<span>SAVE</span>
+  </a>
+
+  <div class="eyebrow">
+    WELCOME BACK
+  </div>
+
+  <h1>Ready to watch?</h1>
+
+  <p>
+    Log in to your account.
+  </p>
+
+  <form id="f">
+
+    <label>
+      Email
+
+      <input
+        id="e"
+        type="email"
+        autocomplete="email"
+        required
+      />
+    </label>
+
+    <label>
+      Password
+
+      <input
+        id="p"
+        type="password"
+        autocomplete="current-password"
+        required
+      />
+    </label>
+
+    <button
+      class="primary"
+      type="submit"
+      id="loginBtn"
+    >
+      Log in
+    </button>
+
+  </form>
+
+  <div class="switch">
+    New here?
+
+    <a href="./register.html">
+      Create an account
+    </a>
+  </div>
+
+  <div
+    id="err"
+    class="error"
+  ></div>
+
+</div>
+
+
+<script>
+const BACKEND_URL =
+  "https://watch2earn-d9im.onrender.com";
+
+const form = document.querySelector("#f");
+const email = document.querySelector("#e");
+const password = document.querySelector("#p");
+const errorBox = document.querySelector("#err");
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  errorBox.textContent = "";
+
+  const emailValue =
+    email.value.trim();
+
+  const passwordValue =
+    password.value;
+
+  if (!emailValue || !passwordValue) {
+    errorBox.textContent =
+      "Please enter your email and password.";
+    return;
+  }
+
+  const button =
+    form.querySelector("button");
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Logging in...";
+  }
+
+  try {
+    const response = await fetch(
+      BACKEND_URL +
+        "/api/auth/login",
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+
+        credentials: "include",
+
+        body: JSON.stringify({
+          email: emailValue,
+          password: passwordValue,
+        }),
+      },
+    );
+
+    const data =
+      await response
+        .json()
+        .catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+          `Login failed (${response.status})`,
+      );
+    }
+
+    /*
+      Save the authentication token
+      returned by the new backend.
+    */
+    if (data.token) {
+      localStorage.setItem(
+        "watchsave_token",
+        data.token,
+      );
+    }
+
+    /*
+      Make sure a token was actually
+      returned before entering dashboard.
+    */
+    if (!data.token) {
+      throw new Error(
+        "Server did not return a login token.",
+      );
+    }
+
+    window.location.href =
+      "./index.html";
+
+  } catch (error) {
+    console.error(
+      "Login error:",
+      error,
+    );
+
+    if (
+      error instanceof TypeError
+    ) {
+      errorBox.textContent =
+        "Cannot connect to Watchsave server. Please try again.";
+    } else {
+      errorBox.textContent =
+        error.message ||
+        "Login failed. Please try again.";
+    }
+
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent =
+        "Log in";
+    }
+  }
+});
+</script>
+
+  </body>
+</html>
