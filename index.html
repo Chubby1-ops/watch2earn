@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Watchsave</title>
+
+    <script
+      async
+      src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2345992146818418"
+      crossorigin="anonymous"
+    ></script>
+
+    <link rel="stylesheet" href="./css/style.css" />
+  </head>
+
+  <body>
+    <div class="bg-orb a"></div>
+    <div class="bg-orb b"></div>
+
+    <header class="topbar">
+      <a class="logo" href="/">WATCH<span>SAVE</span></a>
+
+      <!-- DESKTOP NAVIGATION -->
+      <nav>
+        <a href="#videos">Videos</a>
+        <a href="#wallet">Wallet</a>
+        <a href="#history">History</a>
+        <a href="./admin.html">Admin Dashboard</a>
+      </nav>
+
+      <div class="top-user">
+        <strong id="balance">₦0.00</strong>
+        <button id="logout" class="ghost">Logout</button>
+      </div>
+
+      <!-- MOBILE HAMBURGER MENU -->
+      <div class="mobile-menu">
+        <button
+          id="mobileMenuButton"
+          class="mobile-menu-button"
+          type="button"
+          aria-label="Open menu"
+          aria-expanded="false"
+        >
+          ☰
+        </button>
+
+        <div id="mobileMenuDropdown" class="mobile-menu-dropdown">
+          <a href="#videos">🎬 Videos</a>
+
+          <a href="#wallet">💰 Wallet</a>
+
+          <a href="#history">📋 History</a>
+
+          <a href="./admin.html" class="mobile-admin">
+            🔐 Admin Dashboard
+          </a>
+
+          <button id="mobileLogout" class="mobile-logout" type="button">
+            🚪 Logout
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <div class="eyebrow">WATCH • COMPLETE • EARN</div>
+
+          <h1>Turn screen time into <span>reward time.</span></h1>
+
+          <p>
+            Watch videos, follow the task shown by the creator, wait for the
+            timer and claim your reward.
+          </p>
+
+          <button
+            class="primary"
+            onclick="
+              document
+                .querySelector('#videos')
+                .scrollIntoView({ behavior: 'smooth' })
+            "
+          >
+            Start watching →
+          </button>
+        </div>
+
+        <div class="hero-card">
+          <span>YOUR BALANCE</span>
+          <b id="heroBalance">₦0.00</b>
+
+          <div>
+            <strong id="videoCount">0</strong> live videos &nbsp; • &nbsp;
+            <strong id="historyCount">0</strong> claimed
+          </div>
+        </div>
+      </section>
+
+      <section id="videos" class="section">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">VIDEO FEED</div>
+            <h2>Pick something to watch</h2>
+          </div>
+
+          <button id="refresh" class="ghost">↻ Refresh</button>
+        </div>
+
+        <div id="grid" class="video-grid"></div>
+      </section>
+
+      <section id="wallet" class="wallet section">
+        <form id="withdraw" class="withdraw-form">
+          <label>
+            Account number
+            <input
+              id="account"
+              inputmode="numeric"
+              maxlength="10"
+              placeholder="10-digit account number"
+              required
+            />
+          </label>
+
+          <label>
+            Bank name
+            <select id="bank" required>
+              <option value="">Select bank</option>
+              <option value="Opay">Opay</option>
+              <option value="Moniepoint">Moniepoint</option>
+              <option value="PalmPay">PalmPay</option>
+              <option value="Zenith Bank">Zenith Bank</option>
+              <option value="UBA">UBA</option>
+              <option value="First Bank">First Bank</option>
+            </select>
+          </label>
+
+          <label>
+            Account holder name
+            <input
+              id="accountNameInput"
+              placeholder="Enter the correct name on the account"
+              required
+            />
+
+            <span class="warning-span">
+              Please make sure the account number, bank and account holder name
+              are correct. Watchsave uses the details you provide to process
+              your request.
+            </span>
+          </label>
+
+          <label>
+            Amount
+            <input
+              id="amount"
+              type="number"
+              min="10000"
+              step="0.01"
+              placeholder="₦10,000 minimum"
+              required
+            />
+          </label>
+
+          <button class="primary" id="withdrawBtn">
+            Request withdrawal
+          </button>
+
+          <div id="withdrawHint" class="form-hint"></div>
+        </form>
+      </section>
+
+      <section id="supportChat" class="support-chat section hidden">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">PRIVATE SUPPORT</div>
+
+            <h2>Chat with Watchsave Admin</h2>
+
+            <p>
+              This is your private support chat. Other users cannot access it.
+            </p>
+          </div>
+
+          <span class="chat-live">Admin support</span>
+        </div>
+
+        <div id="userChatMessages" class="chat-messages"></div>
+
+        <form id="userChatForm" class="chat-form">
+          <input
+            id="userChatInput"
+            maxlength="2000"
+            placeholder="Type your message to admin..."
+            required
+          />
+
+          <button class="primary">Send</button>
+        </form>
+      </section>
+
+      <section id="history" class="section">
+        <div class="eyebrow">ACTIVITY</div>
+
+        <h2>Your claimed videos</h2>
+
+        <div id="historyList" class="history-list"></div>
+      </section>
+    </main>
+
+    <div id="modal" class="modal hidden">
+      <div class="watch">
+        <button id="close" class="close">×</button>
+
+        <div class="eyebrow">NOW WATCHING</div>
+
+        <h2 id="wt">Video</h2>
+
+        <div id="player" class="player"></div>
+
+        <div id="task" class="task hidden">
+          <b>YOUR TASK</b>
+          <p id="taskText"></p>
+        </div>
+
+        <div class="watchbar">
+          <div>
+            <strong id="timer">30s</strong>
+            <small>remaining</small>
+          </div>
+
+          <button id="claim" class="primary" disabled>
+            Claim reward
+          </button>
+        </div>
+
+        <div id="note" class="note"></div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+<!-- MOBILE MENU JAVASCRIPT -->
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const watchsaveMenuButton =
+      document.getElementById("mobileMenuButton");
+
+    const watchsaveMenuDropdown =
+      document.getElementById("mobileMenuDropdown");
+
+    const watchsaveMobileLogout =
+      document.getElementById("mobileLogout");
+
+    if (!watchsaveMenuButton || !watchsaveMenuDropdown) {
+      return;
+    }
+
+    watchsaveMenuButton.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const menuIsOpen =
+        watchsaveMenuDropdown.classList.contains("show");
+
+      if (menuIsOpen) {
+        watchsaveMenuDropdown.classList.remove("show");
+        watchsaveMenuButton.textContent = "☰";
+        watchsaveMenuButton.setAttribute("aria-expanded", "false");
+      } else {
+        watchsaveMenuDropdown.classList.add("show");
+        watchsaveMenuButton.textContent = "✕";
+        watchsaveMenuButton.setAttribute("aria-expanded", "true");
+      }
+    });
+
+    document.addEventListener("click", function (event) {
+      if (
+        !event.target.closest(".mobile-menu")
+      ) {
+        watchsaveMenuDropdown.classList.remove("show");
+        watchsaveMenuButton.textContent = "☰";
+        watchsaveMenuButton.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    watchsaveMenuDropdown
+      .querySelectorAll("a")
+      .forEach(function (link) {
+        link.addEventListener("click", function () {
+          watchsaveMenuDropdown.classList.remove("show");
+          watchsaveMenuButton.textContent = "☰";
+          watchsaveMenuButton.setAttribute(
+            "aria-expanded",
+            "false"
+          );
+        });
+      });
+
+    if (watchsaveMobileLogout) {
+      watchsaveMobileLogout.addEventListener(
+        "click",
+        function () {
+          const desktopLogout =
+            document.getElementById("logout");
+
+          if (desktopLogout) {
+            desktopLogout.click();
+          } else {
+            localStorage.removeItem("watchsave_token");
+            window.location.href = "./login.html";
+          }
+        }
+      );
+    }
+  });
+</script>
+
+    <!-- MAIN WATCHSAVE JAVASCRIPT -->
+    <script src="./js/app.js"></script>
+  </body>
+</html>
