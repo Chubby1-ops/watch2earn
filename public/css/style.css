@@ -2098,3 +2098,269 @@ main {
   }
 
 }
+/* =========================================
+ABOUT + PRIVACY PAGES
+========================================= */
+
+.about-page,
+.privacy-page {
+min-height: 100vh;
+background:
+radial-gradient(circle at top right, rgba(255, 106, 0, 0.12), transparent 35%),
+#080808;
+color: #f5f5f5;
+}
+
+/* Main content container */
+.about-page main,
+.privacy-page main {
+max-width: 900px;
+margin: 0 auto;
+padding: 70px 20px;
+}
+
+/* Page heading */
+.about-page h1,
+.privacy-page h1 {
+font-size: clamp(34px, 6vw, 58px);
+line-height: 1.05;
+margin: 10px 0 25px;
+font-weight: 800;
+letter-spacing: -1px;
+}
+
+/* Section headings */
+.about-page h2,
+.privacy-page h2 {
+margin-top: 45px;
+margin-bottom: 16px;
+font-size: 26px;
+color: #ff7300;
+}
+
+.about-page h3,
+.privacy-page h3 {
+margin-top: 28px;
+margin-bottom: 10px;
+font-size: 19px;
+color: #ffffff;
+}
+
+/* Paragraphs */
+.about-page p,
+.privacy-page p {
+color: #cfcfcf;
+font-size: 16px;
+line-height: 1.8;
+margin: 0 0 18px;
+}
+
+/* Lists */
+.about-page ul,
+.privacy-page ul {
+margin: 15px 0 25px;
+padding-left: 25px;
+}
+
+.about-page li,
+.privacy-page li {
+color: #cfcfcf;
+line-height: 1.8;
+margin-bottom: 7px;
+}
+
+/* Strong text */
+.about-page strong,
+.privacy-page strong {
+color: #ffffff;
+}
+
+/* Top navigation */
+.about-page .topbar,
+.privacy-page .topbar {
+border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+background: rgba(8, 8, 8, 0.94);
+}
+
+/* Cards on About page */
+.about-page .card-grid {
+display: grid;
+grid-template-columns: repeat(2, minmax(0, 1fr));
+gap: 18px;
+margin: 30px 0;
+}
+
+.about-page .card {
+padding: 25px;
+border: 1px solid rgba(255, 115, 0, 0.18);
+border-radius: 18px;
+background:
+linear-gradient(
+145deg,
+rgba(255, 115, 0, 0.08),
+rgba(255, 255, 255, 0.025)
+);
+box-shadow: 0 15px 45px rgba(0, 0, 0, 0.25);
+transition:
+transform 0.25s ease,
+border-color 0.25s ease,
+box-shadow 0.25s ease;
+}
+
+.about-page .card:hover {
+transform: translateY(-5px);
+border-color: rgba(255, 115, 0, 0.5);
+box-shadow: 0 20px 55px rgba(255, 115, 0, 0.08);
+}
+
+.about-page .card h3 {
+margin-top: 0;
+color: #ff7300;
+}
+
+.about-page .card p {
+margin-bottom: 0;
+}
+
+/* Eyebrow */
+.about-page .eyebrow,
+.privacy-page .eyebrow {
+display: inline-block;
+margin-bottom: 10px;
+color: #ff7300;
+font-size: 12px;
+font-weight: 800;
+letter-spacing: 2px;
+}
+
+/* Links */
+.about-page main a:not(.primary),
+.privacy-page main a {
+color: #ff7300;
+text-decoration: none;
+transition: color 0.2s ease;
+}
+
+.about-page main a:hover,
+.privacy-page main a:hover {
+color: #ff9a52;
+}
+
+/* Privacy policy date */
+.privacy-page main > p:first-of-type {
+display: inline-block;
+padding: 9px 14px;
+border-radius: 999px;
+background: rgba(255, 115, 0, 0.08);
+border: 1px solid rgba(255, 115, 0, 0.18);
+color: #ff9a52;
+font-size: 13px;
+}
+
+/* Horizontal separation between privacy sections */
+.privacy-page h2 {
+padding-top: 10px;
+border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Primary button */
+.about-page .primary,
+.privacy-page .primary {
+display: inline-flex;
+align-items: center;
+justify-content: center;
+min-height: 48px;
+padding: 0 22px;
+border-radius: 12px;
+background: #ff7300;
+color: #ffffff !important;
+font-weight: 700;
+text-decoration: none;
+box-shadow: 0 10px 30px rgba(255, 115, 0, 0.18);
+transition:
+transform 0.2s ease,
+background 0.2s ease,
+box-shadow 0.2s ease;
+}
+
+.about-page .primary:hover,
+.privacy-page .primary:hover {
+background: #ff8626;
+color: #ffffff !important;
+transform: translateY(-2px);
+box-shadow: 0 15px 35px rgba(255, 115, 0, 0.25);
+}
+
+/* Footer */
+.about-page footer,
+.privacy-page footer {
+border-top: 1px solid rgba(255, 255, 255, 0.07);
+background: rgba(0, 0, 0, 0.35);
+}
+
+.about-page footer p,
+.privacy-page footer p {
+margin: 0;
+color: #888;
+font-size: 14px;
+}
+
+.about-page footer a,
+.privacy-page footer a {
+color: #ff7300;
+text-decoration: none;
+}
+
+.about-page footer a:hover,
+.privacy-page footer a:hover {
+color: #ff9a52;
+}
+
+/* =========================================
+MOBILE
+========================================= */
+
+@media (max-width: 700px) {
+
+.about-page main,
+.privacy-page main {
+padding: 45px 18px;
+}
+
+.about-page h1,
+.privacy-page h1 {
+font-size: 38px;
+}
+
+.about-page h2,
+.privacy-page h2 {
+font-size: 23px;
+margin-top: 36px;
+}
+
+.about-page h3,
+.privacy-page h3 {
+font-size: 18px;
+}
+
+.about-page p,
+.privacy-page p,
+.about-page li,
+.privacy-page li {
+font-size: 15px;
+line-height: 1.75;
+}
+
+.about-page .card-grid {
+grid-template-columns: 1fr;
+gap: 14px;
+}
+
+.about-page .card {
+padding: 21px;
+}
+
+.about-page .primary {
+width: 100%;
+}
+}
