@@ -32,7 +32,8 @@ jobs:
 
       - name: Prepare public folder
         run: |
-          mkdir deploy
+          rm -rf deploy
+          mkdir -p deploy
           cp -r public/. deploy/
 
       - name: Upload public folder
