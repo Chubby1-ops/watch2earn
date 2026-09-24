@@ -35,7 +35,7 @@ jobs:
           rm -rf deploy
           mkdir -p deploy
           cp -r public/. deploy/
-          cp app.js deploy/js/app.js
+          cp app.js deploy/app.js
 
       - name: Upload public folder
         uses: actions/upload-pages-artifact@v4
