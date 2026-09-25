@@ -618,7 +618,7 @@ async function toggleMaintenance() {
     const d = await api(
       "/api/admin/maintenance",
       {
-        method: "POST",
+        method: "PATCH",
         headers: {
           "Content-Type":
             "application/json",
