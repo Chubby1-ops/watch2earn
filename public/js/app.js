@@ -1537,7 +1537,8 @@ function hist(a) {
 
 async function load() {
   if (maintenanceActive) {
-    return;
+    hideMaintenance();
+    maintenanceActive = false;
   }
 
   const me = await api(
@@ -2245,3 +2246,10 @@ setInterval(() => {
       "./login.html";
   }
 })();
+
+window.logout = async function () {
+  localStorage.removeItem("watchsave_token");
+  sessionStorage.removeItem("watchsave_token");
+  try { await fetch(BACKEND_URL + "/api/auth/logout", { method: "POST", credentials: "include" }); } catch (e) {}
+  window.location.href = "./login.html";
+};
