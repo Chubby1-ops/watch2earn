@@ -33,6 +33,23 @@ const ADMIN_EMAIL = String(
 const ADMIN_PASSWORD =
   process.env.ADMIN_PASSWORD || "WatchsaveAdmin123!";
 
+async function adminAuth(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization || "";
+    const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    const token = bearerToken || req.cookies?.ws_token;
+    if (!token) return res.status(401).json({ error: "Admin authentication required." });
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const email = String(decoded.email || "").toLowerCase();
+    if (!email || email !== ADMIN_EMAIL.toLowerCase()) return res.status(403).json({ error: "Admin access required." });
+    req.admin = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Invalid or expired admin session." });
+  }
+}
+
+
 const MIN_WITHDRAWAL =
   Number(process.env.MIN_WITHDRAWAL || 10000);
 
