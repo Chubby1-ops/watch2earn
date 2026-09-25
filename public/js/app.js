@@ -1,4 +1,4 @@
-const BACKEND_URL = "http://localhost:3000";
+const BACKEND_URL = "https://watch2earn-d9im.onrender.com";
 
 const $ = (s) => document.querySelector(s);
 
