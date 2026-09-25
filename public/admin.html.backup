@@ -1,0 +1,1043 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1"
+    />
+
+    <title>Watchsave Admin</title>
+
+    <link rel="stylesheet" href="./css/style.css" />
+
+    <style>
+      /* =====================================================
+         ADMIN MOBILE MENU
+         ===================================================== */
+
+      .admin-mobile-menu {
+        display: none;
+        position: relative;
+      }
+
+      .admin-menu-button {
+        width: 44px !important;
+        height: 44px;
+        padding: 0 !important;
+        border: 1px solid #333;
+        border-radius: 10px;
+        background: #111;
+        color: #fff;
+        font-size: 24px;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      .admin-menu-dropdown {
+        display: none;
+        position: absolute;
+        right: 0;
+        top: 52px;
+        width: 190px;
+        padding: 8px;
+        background: #111;
+        border: 1px solid #333;
+        border-radius: 14px;
+        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.5);
+        z-index: 9999;
+      }
+
+      .admin-menu-dropdown.show {
+        display: block;
+        animation: adminMenuIn 0.18s ease;
+      }
+
+      .admin-menu-dropdown a,
+      .admin-menu-dropdown button {
+        display: block;
+        width: 100%;
+        padding: 13px 14px;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        color: #fff;
+        text-align: left;
+        text-decoration: none;
+        font-size: 14px;
+        cursor: pointer;
+      }
+
+      .admin-menu-dropdown a:hover,
+      .admin-menu-dropdown button:hover {
+        background: #222;
+      }
+
+      .admin-menu-dropdown .menu-logout {
+        color: #ff7a00;
+      }
+
+      @keyframes adminMenuIn {
+        from {
+          opacity: 0;
+          transform: translateY(-6px);
+        }
+
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* =====================================================
+         ADMIN DESKTOP
+         ===================================================== */
+
+      .admin {
+        width: min(1240px, 92%);
+        margin: 45px auto;
+      }
+
+      .admin-card {
+        min-width: 0;
+      }
+
+      .admin-card input,
+      .admin-card textarea,
+      .admin-card select {
+        max-width: 100%;
+      }
+
+      .admin-card input[type="file"] {
+        width: 100%;
+        cursor: pointer;
+      }
+
+      /* =====================================================
+         TABLET
+         ===================================================== */
+
+      @media (max-width: 900px) {
+        .admin {
+          width: 94%;
+          margin: 30px auto;
+        }
+
+        .forms {
+          grid-template-columns: 1fr;
+        }
+
+        .stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .tabs {
+          overflow-x: auto;
+          white-space: nowrap;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
+        }
+
+        .tabs::-webkit-scrollbar {
+          display: none;
+        }
+
+        .tab {
+          flex: 0 0 auto;
+        }
+      }
+
+      /* =====================================================
+         PHONE
+         ===================================================== */
+
+      @media (max-width: 600px) {
+        /* TOP BAR */
+
+        .topbar {
+          height: 64px;
+          padding: 0 12px;
+          gap: 10px;
+          position: relative;
+        }
+
+        .topbar .logo {
+          font-size: 19px;
+        }
+
+        /* Hide normal desktop navigation */
+
+        .topbar nav {
+          display: none;
+        }
+
+        /* Hide normal logout button */
+
+        .topbar > #logout {
+          display: none;
+        }
+
+        /* Show hamburger */
+
+        .admin-mobile-menu {
+          display: block;
+          margin-left: auto;
+        }
+
+        /* MAIN ADMIN AREA */
+
+        .admin {
+          width: 100%;
+          margin: 0;
+          padding: 20px 12px 45px;
+        }
+
+        /* HEADER */
+
+        .admin-head {
+          display: flex;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 12px;
+          margin-bottom: 18px;
+        }
+
+        .admin-head h1 {
+          font-size: 30px;
+          line-height: 1.1;
+        }
+
+        .admin-head p {
+          font-size: 13px;
+          line-height: 1.5;
+        }
+
+        .online {
+          width: 100%;
+          text-align: center;
+          font-size: 12px;
+          padding: 11px;
+        }
+
+        /* TABS */
+
+        .tabs {
+          display: flex;
+          width: 100%;
+          overflow-x: auto;
+          overflow-y: hidden;
+          gap: 6px;
+          margin-top: 20px;
+          padding-bottom: 10px;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
+        }
+
+        .tabs::-webkit-scrollbar {
+          display: none;
+        }
+
+        .tab {
+          flex: 0 0 auto;
+          white-space: nowrap;
+          padding: 12px 14px;
+          min-height: 43px;
+          font-size: 12px;
+        }
+
+        /* PANELS */
+
+        .pane {
+          padding: 20px 0;
+        }
+
+        /* STATISTICS */
+
+        .stats {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 9px;
+        }
+
+        .stats > div {
+          padding: 14px 10px;
+          border-radius: 15px;
+        }
+
+        .stats small {
+          font-size: 8px;
+        }
+
+        .stats b {
+          font-size: 25px;
+          margin-top: 7px;
+        }
+
+        /* NOTICE */
+
+        .notice {
+          font-size: 12px;
+          line-height: 1.5;
+          padding: 13px;
+        }
+
+        /* VIDEO FORMS */
+
+        .forms {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 14px;
+        }
+
+        .admin-card {
+          padding: 17px;
+          border-radius: 17px;
+          margin-bottom: 14px;
+        }
+
+        .admin-card h2 {
+          font-size: 19px;
+          line-height: 1.3;
+        }
+
+        .admin-card p {
+          font-size: 12px;
+          line-height: 1.5;
+        }
+
+        /* INPUTS */
+
+        .admin-card input,
+        .admin-card textarea,
+        .admin-card select {
+          width: 100%;
+          max-width: 100%;
+          font-size: 16px;
+        }
+
+        .admin-card input {
+          min-height: 48px;
+        }
+
+        .admin-card textarea {
+          min-height: 90px;
+        }
+
+        /* REWARD / DURATION */
+
+        .two {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 10px;
+        }
+
+        .two label {
+          display: block;
+          width: 100%;
+        }
+
+        .two label input {
+          display: block;
+          width: 100%;
+          margin-top: 6px;
+        }
+
+        /* PHONE VIDEO SELECTOR */
+
+        .admin-card input[type="file"] {
+          display: block;
+          width: 100%;
+          min-height: 55px;
+          padding: 10px;
+          font-size: 13px;
+          background: #090909;
+          border: 1px solid #333;
+          border-radius: 11px;
+        }
+
+        /* UPLOAD BUTTON */
+
+        .admin-card .primary {
+          width: 100%;
+          min-height: 51px;
+          font-size: 14px;
+        }
+
+        /* VIDEO LIST */
+
+        #videoList {
+          width: 100%;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        /* USERS */
+
+        #usersList {
+          width: 100%;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        /* WITHDRAWALS */
+
+        #wdList {
+          width: 100%;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        /* CHAT */
+
+        #chatList {
+          width: 100%;
+        }
+
+        .chat-card {
+          padding: 13px;
+        }
+
+        .chat-form {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .chat-form input {
+          width: 100%;
+          min-height: 48px;
+          font-size: 16px;
+        }
+
+        .chat-form button {
+          width: 100%;
+          min-height: 47px;
+        }
+
+        /* REFRESH BUTTONS */
+
+        .rowhead {
+          display: flex;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 12px;
+        }
+
+        .rowhead .ghost {
+          width: 100%;
+          min-height: 45px;
+        }
+
+        /* TABLE-STYLE CONTENT */
+
+        .table {
+          min-width: 600px;
+        }
+
+        .user {
+          min-width: 600px;
+        }
+      }
+
+      /* =====================================================
+         VERY SMALL PHONES
+         ===================================================== */
+
+      @media (max-width: 380px) {
+        .admin {
+          padding-left: 9px;
+          padding-right: 9px;
+        }
+
+        .admin-head h1 {
+          font-size: 27px;
+        }
+
+        .stats {
+          gap: 7px;
+        }
+
+        .stats > div {
+          padding: 12px 8px;
+        }
+
+        .stats b {
+          font-size: 21px;
+        }
+
+        .tab {
+          padding: 10px 11px;
+          font-size: 11px;
+        }
+
+        .admin-card {
+          padding: 14px;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- =====================================================
+         TOP BAR
+         ===================================================== -->
+
+    <header class="topbar">
+      <a class="logo" href="/">
+        WATCH<span>SAVE</span>
+      </a>
+
+      <!-- DESKTOP NAV -->
+      <nav>
+        <a href="./index.html">View site</a>
+      </nav>
+
+      <!-- DESKTOP LOGOUT -->
+      <button
+        id="logout"
+        class="ghost"
+        type="button"
+      >
+        Logout
+      </button>
+
+      <!-- MOBILE HAMBURGER -->
+      <div class="admin-mobile-menu">
+        <button
+          id="adminMenuButton"
+          class="admin-menu-button"
+          type="button"
+          aria-label="Open admin menu"
+          aria-expanded="false"
+        >
+          ☰
+        </button>
+
+        <div
+          id="adminMenuDropdown"
+          class="admin-menu-dropdown"
+        >
+          <a href="./index.html">
+            🌐 View site
+          </a>
+
+          <button
+            id="mobileLogout"
+            class="menu-logout"
+            type="button"
+          >
+            🚪 Logout
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- =====================================================
+         ADMIN
+         ===================================================== -->
+
+    <main class="admin">
+      <!-- HEADER -->
+
+      <div class="admin-head">
+        <div>
+          <div class="eyebrow">
+            CONTROL CENTER
+          </div>
+
+          <h1>
+            Watchsave Admin
+          </h1>
+
+          <p>
+            Videos, rewards, tasks, users and withdrawals.
+          </p>
+        </div>
+
+        <div class="online">
+          ● <b id="topOnline">0</b> users online
+        </div>
+      </div>
+
+      <!-- ===================================================
+           TABS
+           =================================================== -->
+
+      <div class="tabs">
+        <button
+          class="tab active"
+          data-tab="dash"
+          type="button"
+        >
+          Dashboard
+        </button>
+
+        <button
+          class="tab"
+          data-tab="vids"
+          type="button"
+        >
+          Videos
+        </button>
+
+        <button
+          class="tab"
+          data-tab="users"
+          type="button"
+        >
+          Users
+        </button>
+
+        <button
+          class="tab"
+          data-tab="wd"
+          type="button"
+        >
+          Withdrawals
+        </button>
+
+        <button
+          class="tab"
+          data-tab="chats"
+          type="button"
+        >
+          Chats
+        </button>
+      </div>
+
+      <!-- ===================================================
+           DASHBOARD
+           =================================================== -->
+
+      <section
+        id="dash"
+        class="pane active"
+      >
+        <div class="stats">
+          <div>
+            <small>REGISTERED</small>
+            <b id="su">0</b>
+          </div>
+
+          <div>
+            <small>ONLINE</small>
+            <b id="so">0</b>
+          </div>
+
+          <div>
+            <small>LIVE VIDEOS</small>
+            <b id="sv">0</b>
+          </div>
+
+          <div>
+            <small>PENDING PAYOUTS</small>
+            <b id="sp">0</b>
+          </div>
+        </div>
+
+        <div class="notice">
+          Passwords are never displayed in the admin panel.
+          You can see registration/contact/activity information
+          and remove an account.
+        </div>
+      </section>
+
+      <!-- ===================================================
+      <!-- ===================================================
+           REFERRAL SETTINGS
+           =================================================== -->
+
+      <section class="pane" id="referrals">
+        <div class="forms">
+          <div class="admin-card">
+            <h2>Referral Settings</h2>
+            <p>Control the number of successful referrals required and the reward amount.</p>
+
+            <form id="referralSettingsForm">
+              <label>
+                Required successful referrals
+                <input id="referralRequired" type="number" min="1" step="1" value="10" required>
+              </label>
+
+              <label>
+                Referral reward ₦
+                <input id="referralReward" type="number" min="1" step="1" value="1500" required>
+              </label>
+
+              <p id="referralQualificationInfo">A referral becomes successful after the referred user reaches the qualification balance.</p>
+
+              <button id="saveReferralSettings" class="primary" type="submit">Save Referral Settings</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+           VIDEOS
+           =================================================== -->
+
+      <section
+        id="vids"
+        class="pane"
+      >
+        <div class="forms">
+
+          <!-- URL VIDEO -->
+
+          <div class="admin-card">
+            <h2>
+              Add social / website URL
+            </h2>
+
+            <p>
+              Works with TikTok, YouTube, Facebook, Instagram
+              and other HTTP/HTTPS URLs. Some sites block
+              embedding, so the user gets an open-video button
+              instead.
+            </p>
+
+            <form id="urlForm">
+              <input
+                name="title"
+                placeholder="Video title"
+                required
+              />
+
+              <textarea
+                name="description"
+                placeholder="Description"
+              ></textarea>
+
+              <input
+                name="source"
+                placeholder="https://..."
+                required
+              />
+
+              <div class="two">
+                <label>
+                  Reward ₦
+                  <input
+                    name="reward"
+                    type="number"
+                    min="0"
+                    value="50"
+                  />
+                </label>
+
+                <label>
+                  Duration seconds
+                  <input
+                    name="duration"
+                    type="number"
+                    min="5"
+                    value="30"
+                  />
+                </label>
+              </div>
+
+              <textarea
+                name="command"
+                placeholder="Command / task: Follow @yourpage on TikTok, then watch the video."
+              ></textarea>
+
+              <button
+                class="primary"
+                type="submit"
+              >
+                Publish URL video
+              </button>
+            </form>
+          </div>
+
+          <!-- UPLOAD OWN VIDEO -->
+
+          <div class="admin-card">
+            <h2>
+              Upload your own video
+            </h2>
+
+            <p>
+              MP4, WebM, OGG, MOV or M4V.
+              Maximum 250 MB in this local build.
+            </p>
+
+            <form
+              id="uploadForm"
+              enctype="multipart/form-data"
+            >
+              <input
+                name="title"
+                placeholder="Video title"
+                autocomplete="off"
+              />
+
+              <textarea
+                name="description"
+                placeholder="Description"
+              ></textarea>
+
+              <label>
+                Video file
+
+                <input
+                  name="video"
+                  type="file"
+                  accept="video/*,.mp4,.webm,.ogg,.mov,.m4v"
+                  required
+                />
+              </label>
+
+              <div class="two">
+                <label>
+                  Reward ₦
+                  <input
+                    name="reward"
+                    type="number"
+                    min="0"
+                    value="50"
+                  />
+                </label>
+
+                <label>
+                  Duration seconds
+                  <input
+                    name="duration"
+                    type="number"
+                    min="5"
+                    value="30"
+                  />
+                </label>
+              </div>
+
+              <textarea
+                name="command"
+                placeholder="Command / task for viewers"
+              ></textarea>
+
+              <button
+                class="primary"
+                type="submit"
+              >
+                Upload &amp; publish
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- VIDEO LIBRARY -->
+
+        <div class="admin-card">
+          <h2>
+            Video library
+          </h2>
+
+          <p>
+            Edit the reward and duration for any video.
+          </p>
+
+          <div id="videoList"></div>
+        </div>
+      </section>
+
+      <!-- ===================================================
+           USERS
+           =================================================== -->
+
+      <section
+        id="users"
+        class="pane"
+      >
+        <div class="admin-card">
+          <div class="rowhead">
+            <div>
+              <h2>
+                Users
+              </h2>
+
+              <p>
+                New registrations appear here.
+                Online status refreshes automatically.
+              </p>
+            </div>
+
+            <button
+              id="refreshUsers"
+              class="ghost"
+              type="button"
+            >
+              ↻ Refresh
+            </button>
+          </div>
+
+          <div id="usersList"></div>
+        </div>
+      </section>
+
+      <!-- ===================================================
+           WITHDRAWALS
+           =================================================== -->
+
+      <section
+        id="wd"
+        class="pane"
+      >
+        <div class="admin-card">
+          <h2>
+            Withdrawal requests
+          </h2>
+
+          <div id="wdList"></div>
+        </div>
+      </section>
+
+      <!-- ===================================================
+           CHATS
+           =================================================== -->
+
+      <section
+        id="chats"
+        class="pane"
+      >
+        <div class="admin-card">
+          <div class="rowhead">
+            <div>
+              <h2>
+                Private user chats
+              </h2>
+
+              <p>
+                Only you can send messages from this area.
+                Each chat belongs to one user.
+              </p>
+            </div>
+
+            <button
+              id="refreshChats"
+              class="ghost"
+              type="button"
+            >
+              ↻ Refresh
+            </button>
+          </div>
+
+          <div
+            id="chatList"
+            class="chat-list"
+          ></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- TOAST -->
+
+    <div
+      id="toast"
+      class="toast"
+    ></div>
+
+    <!-- =====================================================
+         MOBILE MENU SCRIPT
+         ===================================================== -->
+
+    <script>
+      const adminMenuButton =
+        document.getElementById(
+          "adminMenuButton",
+        );
+
+      const adminMenuDropdown =
+        document.getElementById(
+          "adminMenuDropdown",
+        );
+
+      const mobileLogout =
+        document.getElementById(
+          "mobileLogout",
+        );
+
+      /* Open / close hamburger */
+
+      if (
+        adminMenuButton &&
+        adminMenuDropdown
+      ) {
+        adminMenuButton.addEventListener(
+          "click",
+          (e) => {
+            e.stopPropagation();
+
+            const isOpen =
+              adminMenuDropdown.classList.toggle(
+                "show",
+              );
+
+            adminMenuButton.setAttribute(
+              "aria-expanded",
+              isOpen
+                ? "true"
+                : "false",
+            );
+
+            adminMenuButton.textContent =
+              isOpen ? "✕" : "☰";
+          },
+        );
+
+        /* Close when tapping outside */
+
+        document.addEventListener(
+          "click",
+          (e) => {
+            if (
+              !e.target.closest(
+                ".admin-mobile-menu",
+              )
+            ) {
+              adminMenuDropdown.classList.remove(
+                "show",
+              );
+
+              adminMenuButton.setAttribute(
+                "aria-expanded",
+                "false",
+              );
+
+              adminMenuButton.textContent =
+                "☰";
+            }
+          },
+        );
+      }
+
+      /* Mobile logout uses the same
+         logout button logic */
+
+      if (mobileLogout) {
+        mobileLogout.addEventListener(
+          "click",
+          () => {
+            const desktopLogout =
+              document.getElementById(
+                "logout",
+              );
+
+            if (desktopLogout) {
+              desktopLogout.click();
+            } else {
+              localStorage.removeItem(
+                "watchsave_token",
+              );
+
+              location.href =
+                "./login.html";
+            }
+          },
+        );
+      }
+    </script>
+
+    <!-- ADMIN JS -->
+
+    <script src="./js/admin.js"></script>
+  </body>
+</html>

@@ -2,33 +2,91 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1"
+    />
     <title>Join Watchsave</title>
-    <link rel="stylesheet" href="./css/style.css" />
+    <link
+      rel="stylesheet"
+      href="./css/style.css"
+    />
   </head>
 
   <body class="auth">
     <div class="auth-card">
-      <a class="logo" href="./index.html">WATCH<span>SAVE</span></a>
+      <a
+        class="logo"
+        href="./index.html"
+      >
+        WATCH<span>SAVE</span>
+      </a>
 
-      <div class="eyebrow">JOIN WATCHSAVE</div>
+      <div class="eyebrow">
+        JOIN WATCHSAVE
+      </div>
 
-      <h1>Create your account.</h1>
+      <h1>
+        Create your account.
+      </h1>
 
       <form id="f">
+
         <label>
           Name
-          <input id="n" required />
+          <input
+            id="n"
+            required
+          />
+        </label>
+
+        <label>
+          Username
+          <small>
+            3–20 letters, numbers or _
+          </small>
+
+          <input
+            id="username"
+            minlength="3"
+            maxlength="20"
+            pattern="[A-Za-z0-9_]{3,20}"
+            placeholder="Choose a username"
+            required
+          />
         </label>
 
         <label>
           Email
-          <input id="e" type="email" required />
+          <input
+            id="e"
+            type="email"
+            required
+          />
         </label>
 
         <label>
-          Phone <small>(optional)</small>
-          <input id="ph" />
+          Phone
+          <small>
+            (optional)
+          </small>
+
+          <input
+            id="ph"
+          />
+        </label>
+
+        <label>
+          Referral code
+          <small>
+            (optional)
+          </small>
+
+          <input
+            id="ref"
+            maxlength="100"
+            placeholder="Referral code"
+          />
         </label>
 
         <label>
@@ -41,65 +99,176 @@
           />
         </label>
 
-        <button class="primary">Create account</button>
+        <button
+          class="primary"
+          id="registerBtn"
+        >
+          Create account
+        </button>
+
       </form>
 
       <div class="switch">
         Already registered?
-        <a href="./login.html">Log in</a>
+        <a href="./login.html">
+          Log in
+        </a>
       </div>
 
-      <div id="err" class="error"></div>
+      <div
+        id="err"
+        class="error"
+      ></div>
     </div>
 
     <script>
       const BACKEND_URL =
         "https://watch2earn-d9im.onrender.com";
 
-      const form = document.getElementById("f");
-      const nameInput = document.getElementById("n");
-      const emailInput = document.getElementById("e");
-      const phoneInput = document.getElementById("ph");
-      const passwordInput = document.getElementById("p");
-      const error = document.getElementById("err");
+      const form =
+        document.getElementById("f");
+
+      const nameInput =
+        document.getElementById("n");
+
+      const usernameInput =
+        document.getElementById("username");
+
+      const emailInput =
+        document.getElementById("e");
+
+      const phoneInput =
+        document.getElementById("ph");
+
+      const referralInput =
+        document.getElementById("ref");
+
+      const passwordInput =
+        document.getElementById("p");
+
+      const registerBtn =
+        document.getElementById(
+          "registerBtn"
+        );
+
+      const error =
+        document.getElementById("err");
+
+      /* =========================
+         AUTO-READ REFERRAL LINK
+      ========================= */
+
+      const params =
+        new URLSearchParams(
+          window.location.search
+        );
+
+      const referralFromUrl =
+        params.get("ref");
+
+      if (referralFromUrl) {
+        referralInput.value =
+          referralFromUrl;
+      }
+
+      /* =========================
+         REGISTER
+      ========================= */
 
       form.onsubmit = async (x) => {
         x.preventDefault();
+
         error.textContent = "";
 
-        try {
-          const r = await fetch(
-            BACKEND_URL + "/api/auth/register",
-            {
-              method: "POST",
-              credentials: "include",
-              headers: {
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({
-                name: nameInput.value,
-                email: emailInput.value,
-                phone: phoneInput.value,
-                password: passwordInput.value
-              })
-            }
-          );
+        const username =
+          usernameInput.value.trim();
 
-          const d = await r.json().catch(() => ({}));
+        if (
+          !/^[A-Za-z0-9_]{3,20}$/.test(
+            username
+          )
+        ) {
+          error.textContent =
+            "Username must be 3–20 characters and use only letters, numbers or underscore.";
+
+          return;
+        }
+
+        registerBtn.disabled =
+          true;
+
+        registerBtn.textContent =
+          "Creating account...";
+
+        try {
+          const r =
+            await fetch(
+              BACKEND_URL +
+                "/api/auth/register",
+              {
+                method: "POST",
+
+                credentials:
+                  "include",
+
+                headers: {
+                  "Content-Type":
+                    "application/json"
+                },
+
+                body:
+                  JSON.stringify({
+                    name:
+                      nameInput.value.trim(),
+
+                    username,
+
+                    email:
+                      emailInput.value.trim(),
+
+                    phone:
+                      phoneInput.value.trim(),
+
+                    password:
+                      passwordInput.value,
+
+                    referralCode:
+                      referralInput.value.trim()
+                  })
+              }
+            );
+
+          const d =
+            await r.json()
+              .catch(() => ({}));
 
           if (!r.ok) {
             throw new Error(
-              d.error || "Registration failed"
+              d.error ||
+                "Registration failed"
             );
           }
 
-          // Registration succeeded.
-          // Send the new user to the main website.
-          location.href = "./index.html";
+          if (d.token) {
+            localStorage.setItem(
+              "watchsave_token",
+              d.token
+            );
+          }
+
+          location.href =
+            "./index.html";
 
         } catch (q) {
           error.textContent =
-            q.message || "Something went wrong";
+            q.message ||
+            "Something went wrong";
+
+          registerBtn.disabled =
+            false;
+
+          registerBtn.textContent =
+            "Create account";
         }
       };
     </script>
