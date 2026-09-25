@@ -1,4 +1,3 @@
-
 require("dotenv").config();
 
 const express = require("express");
@@ -43,13 +42,16 @@ const DEFAULT_REWARD =
 const DEFAULT_DURATION =
   Number(process.env.DEFAULT_DURATION || 30);
 
+const REFERRAL_QUALIFICATION_BALANCE =
+  Number(process.env.REFERRAL_QUALIFICATION_BALANCE || 5000);
+
 const SESSION_MAX_AGE =
   30 * 24 * 60 * 60 * 1000;
 
 
-/* =========================
+/* =========================================================
    DIRECTORIES
-========================= */
+========================================================= */
 
 const PERSISTENT_DIR =
   path.join(__dirname, "data");
@@ -62,38 +64,668 @@ fs.mkdirSync(UPLOAD_DIR, {
 });
 
 
-/* =========================
+/* =========================================================
    HELPERS
-========================= */
+========================================================= */
 
-const uid = (p) =>
-  `${p}_${crypto.randomBytes(8).toString("hex")}`;
+const uid = (prefix) =>
+  `${prefix}_${crypto.randomBytes(8).toString("hex")}`;
 
 const now = () =>
   new Date().toISOString();
 
+function money(value) {
+  return Number(Number(value || 0).toFixed(2));
+}
 
-/* =========================
-   SESSION CLEANUP
-========================= */
+function makeReferralCode() {
+  return (
+    "WS" +
+    crypto
+      .randomBytes(5)
+      .toString("hex")
+      .toUpperCase()
+  );
+}
 
-async function clean() {
-  try {
+async function uniqueReferralCode() {
+  for (let i = 0; i < 20; i++) {
+    const code = makeReferralCode();
+
+    const result = await pool.query(
+      `
+      SELECT id
+      FROM users
+      WHERE referral_code = $1
+      LIMIT 1
+      `,
+      [code]
+    );
+
+    if (result.rows.length === 0) {
+      return code;
+    }
+  }
+
+  throw new Error(
+    "Could not generate a unique referral code."
+  );
+}
+
+
+/* =========================================================
+   DATABASE SETUP / SAFE MIGRATION
+========================================================= */
+
+async function ensureSchema() {
+  await pool.query(`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS username TEXT,
+      ADD COLUMN IF NOT EXISTS referral_code TEXT,
+      ADD COLUMN IF NOT EXISTS referred_by TEXT,
+      ADD COLUMN IF NOT EXISTS referral_qualified BOOLEAN DEFAULT FALSE
+  `);
+
+  await pool.query(`
+    UPDATE users
+    SET referral_qualified = FALSE
+    WHERE referral_qualified IS NULL
+  `);
+
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS
+    idx_users_username_lower
+    ON users (LOWER(username))
+    WHERE username IS NOT NULL
+    AND username <> ''
+  `);
+
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS
+    idx_users_referral_code
+    ON users (referral_code)
+    WHERE referral_code IS NOT NULL
+    AND referral_code <> ''
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS
+    idx_users_referred_by
+    ON users(referred_by)
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS balance_adjustments (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+      admin_id TEXT NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+      direction TEXT NOT NULL
+        CHECK (direction IN ('add', 'remove')),
+      amount NUMERIC(12,2) NOT NULL
+        CHECK (amount > 0),
+      reason TEXT DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS
+    idx_balance_adjustments_user
+    ON balance_adjustments(user_id)
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS
+    idx_balance_adjustments_created
+    ON balance_adjustments(created_at DESC)
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS site_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    )
+  `);
+
+  await pool.query(`
+    INSERT INTO site_settings (
+      key,
+      value,
+      updated_at
+    )
+    VALUES (
+      'maintenance_mode',
+      'false',
+      $1
+    )
+    ON CONFLICT (key)
+    DO NOTHING
+  `, [now()]);
+
+  await pool.query(`
+    INSERT INTO site_settings (
+      key,
+      value,
+      updated_at
+    )
+    VALUES
+      ('referral_required', '10', $1),
+      ('referral_reward', '1500', $1)
+    ON CONFLICT (key)
+    DO NOTHING
+  `, [now()]);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS referral_rewards (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+      qualified_referrals INTEGER NOT NULL,
+      reward NUMERIC(12,2) NOT NULL
+        CHECK (reward > 0),
+      created_at TIMESTAMPTZ NOT NULL
+    )
+  `);
+
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS
+    idx_referral_rewards_user
+    ON referral_rewards(user_id)
+  `);
+
+  const usersWithoutCodes =
+    await pool.query(`
+      SELECT id
+      FROM users
+      WHERE referral_code IS NULL
+      OR referral_code = ''
+    `);
+
+  for (const user of usersWithoutCodes.rows) {
+    const code =
+      await uniqueReferralCode();
+
     await pool.query(
       `
-      DELETE FROM sessions
-      WHERE created_at < NOW() - INTERVAL '30 days'
-      `
+      UPDATE users
+      SET referral_code = $1
+      WHERE id = $2
+      `,
+      [code, user.id]
+    );
+  }
+
+  const fkCheck =
+    await pool.query(`
+      SELECT 1
+      FROM pg_constraint
+      WHERE conname = 'users_referred_by_fkey'
+      LIMIT 1
+    `);
+
+  if (fkCheck.rows.length === 0) {
+    try {
+      await pool.query(`
+        ALTER TABLE users
+        ADD CONSTRAINT users_referred_by_fkey
+        FOREIGN KEY (referred_by)
+        REFERENCES users(id)
+        ON DELETE SET NULL
+      `);
+    } catch (err) {
+      console.warn(
+        "Referral foreign key could not be added:",
+        err.message
+      );
+    }
+  }
+
+  console.log("✅ Database schema verified.");
+}
+
+
+/* =========================================================
+   MAINTENANCE HELPERS
+========================================================= */
+
+async function getMaintenanceMode() {
+  try {
+    const result =
+      await pool.query(`
+        SELECT value
+        FROM site_settings
+        WHERE key = 'maintenance_mode'
+        LIMIT 1
+      `);
+
+    if (!result.rows.length) {
+      return false;
+    }
+
+    return (
+      String(result.rows[0].value)
+        .toLowerCase() === "true"
     );
   } catch (err) {
-    console.error("SESSION CLEANUP ERROR:", err);
+    console.error(
+      "MAINTENANCE READ ERROR:",
+      err
+    );
+
+    return false;
+  }
+}
+
+async function setMaintenanceMode(active) {
+  await pool.query(
+    `
+    INSERT INTO site_settings (
+      key,
+      value,
+      updated_at
+    )
+    VALUES (
+      'maintenance_mode',
+      $1,
+      $2
+    )
+    ON CONFLICT (key)
+    DO UPDATE SET
+      value = EXCLUDED.value,
+      updated_at = EXCLUDED.updated_at
+    `,
+    [
+      active ? "true" : "false",
+      now(),
+    ]
+  );
+}
+
+
+/* =========================================================
+   MAINTENANCE MIDDLEWARE
+========================================================= */
+
+async function maintenance(req, res, next) {
+  try {
+    const active =
+      await getMaintenanceMode();
+
+    if (!active) {
+      return next();
+    }
+
+    if (req.user?.isAdmin) {
+      return next();
+    }
+
+    return res.status(503).json({
+      maintenance: true,
+      error:
+        "Watchsave is currently under maintenance. Please check back in a few minutes.",
+    });
+  } catch (err) {
+    console.error(
+      "MAINTENANCE MIDDLEWARE ERROR:",
+      err
+    );
+
+    return next();
   }
 }
 
 
-/* =========================
+/* =========================================================
+   SESSION CLEANUP
+========================================================= */
+
+async function clean() {
+  try {
+    await pool.query(`
+      DELETE FROM sessions
+      WHERE created_at < NOW() - INTERVAL '30 days'
+    `);
+  } catch (err) {
+    console.error(
+      "SESSION CLEANUP ERROR:",
+      err
+    );
+  }
+}
+
+
+/* =========================================================
+   REFERRAL QUALIFICATION
+========================================================= */
+
+async function checkReferralQualification(
+  client,
+  userId,
+  balance
+) {
+  if (
+    Number(balance) <
+    REFERRAL_QUALIFICATION_BALANCE
+  ) {
+    return;
+  }
+
+  const qualifiedUser =
+    await client.query(
+      `
+      UPDATE users
+      SET referral_qualified = TRUE
+      WHERE id = $1
+      AND referral_qualified = FALSE
+      AND referred_by IS NOT NULL
+      AND deleted = FALSE
+      RETURNING id, referred_by
+      `,
+      [userId]
+    );
+
+  if (
+    qualifiedUser.rows.length === 0
+  ) {
+    return;
+  }
+
+  const referrerId =
+    qualifiedUser.rows[0].referred_by;
+
+  if (!referrerId) {
+    return;
+  }
+
+  const settingsResult =
+    await client.query(
+      `
+      SELECT key, value
+      FROM site_settings
+      WHERE key IN (
+        'referral_required',
+        'referral_reward'
+      )
+      `
+    );
+
+  let requiredReferrals = 10;
+  let rewardAmount = 1500;
+
+  for (
+    const setting
+    of settingsResult.rows
+  ) {
+    if (
+      setting.key ===
+      "referral_required"
+    ) {
+      requiredReferrals =
+        Math.max(
+          1,
+          Number(setting.value) || 10
+        );
+    }
+
+    if (
+      setting.key ===
+      "referral_reward"
+    ) {
+      rewardAmount =
+        Math.max(
+          0,
+          Number(setting.value) || 1500
+        );
+    }
+  }
+
+  if (
+    rewardAmount <= 0
+  ) {
+    return;
+  }
+
+  const referrer =
+    await client.query(
+      `
+      SELECT id
+      FROM users
+      WHERE id = $1
+      AND deleted = FALSE
+      AND is_admin = FALSE
+      FOR UPDATE
+      `,
+      [referrerId]
+    );
+
+  if (
+    referrer.rows.length === 0
+  ) {
+    return;
+  }
+
+  const qualifiedResult =
+    await client.query(
+      `
+      SELECT COUNT(*) AS count
+      FROM users
+      WHERE referred_by = $1
+      AND referral_qualified = TRUE
+      AND deleted = FALSE
+      `,
+      [referrerId]
+    );
+
+  const qualifiedCount =
+    Number(
+      qualifiedResult.rows[0]?.count || 0
+    );
+
+  if (
+    qualifiedCount <
+    requiredReferrals
+  ) {
+    return;
+  }
+
+  const alreadyRewarded =
+    await client.query(
+      `
+      SELECT id
+      FROM referral_rewards
+      WHERE user_id = $1
+      LIMIT 1
+      `,
+      [referrerId]
+    );
+
+  if (
+    alreadyRewarded.rows.length > 0
+  ) {
+    return;
+  }
+
+  await client.query(
+    `
+    UPDATE users
+    SET balance = balance + $1,
+        last_seen = $2
+    WHERE id = $3
+    AND deleted = FALSE
+    `,
+    [
+      rewardAmount,
+      now(),
+      referrerId,
+    ]
+  );
+
+  await client.query(
+    `
+    INSERT INTO referral_rewards (
+      id,
+      user_id,
+      qualified_referrals,
+      reward,
+      created_at
+    )
+    VALUES ($1,$2,$3,$4,$5)
+    `,
+    [
+      uid("ref"),
+      referrerId,
+      qualifiedCount,
+      rewardAmount,
+      now(),
+    ]
+  );
+}
+
+
+
+/* =========================================================
+   ADMIN REFERRAL SETTINGS
+========================================================= */
+
+app.get(
+  "/api/admin/referrals",
+  adminAuth,
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `
+        SELECT key, value
+        FROM site_settings
+        WHERE key IN (
+          'referral_required',
+          'referral_reward'
+        )
+        `
+      );
+
+      const settings = {};
+
+      for (const row of result.rows) {
+        settings[row.key] = row.value;
+      }
+
+      res.json({
+        requiredReferrals: Math.max(
+          1,
+          Number(
+            settings.referral_required || 10
+          )
+        ),
+
+        rewardAmount: Math.max(
+          0,
+          Number(
+            settings.referral_reward || 1500
+          )
+        ),
+
+        qualificationBalance:
+          REFERRAL_QUALIFICATION_BALANCE,
+      });
+    } catch (err) {
+      console.error(
+        "ADMIN REFERRAL SETTINGS ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not load referral settings.",
+      });
+    }
+  }
+);
+
+app.patch(
+  "/api/admin/referrals",
+  adminAuth,
+  async (req, res) => {
+    try {
+      const requiredReferrals = Number(
+        req.body.requiredReferrals
+      );
+
+      const rewardAmount = Number(
+        req.body.rewardAmount
+      );
+
+      if (
+        !Number.isInteger(requiredReferrals) ||
+        requiredReferrals < 1
+      ) {
+        return res.status(400).json({
+          error:
+            "Required referrals must be a whole number of at least 1.",
+        });
+      }
+
+      if (
+        !Number.isFinite(rewardAmount) ||
+        rewardAmount <= 0
+      ) {
+        return res.status(400).json({
+          error:
+            "Reward amount must be greater than 0.",
+        });
+      }
+
+      await pool.query(
+        `
+        INSERT INTO site_settings (
+          key,
+          value,
+          updated_at
+        )
+        VALUES
+          ('referral_required', $1, $3),
+          ('referral_reward', $2, $3)
+        ON CONFLICT (key)
+        DO UPDATE SET
+          value = EXCLUDED.value,
+          updated_at = EXCLUDED.updated_at
+        `,
+        [
+          String(requiredReferrals),
+          String(rewardAmount),
+          now(),
+        ]
+      );
+
+      res.json({
+        ok: true,
+        requiredReferrals,
+        rewardAmount,
+        qualificationBalance:
+          REFERRAL_QUALIFICATION_BALANCE,
+      });
+    } catch (err) {
+      console.error(
+        "ADMIN REFERRAL UPDATE ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not update referral settings.",
+      });
+    }
+  }
+);
+
+/* =========================================================
    ADMIN
-========================= */
+========================================================= */
 
 async function ensureAdmin() {
   const existing =
@@ -114,6 +746,8 @@ async function ensureAdmin() {
     );
 
   if (existing.rows.length === 0) {
+    const adminId = uid("usr");
+
     await pool.query(
       `
       INSERT INTO users (
@@ -127,14 +761,15 @@ async function ensureAdmin() {
         deleted,
         joined_at,
         last_login_at,
-        last_seen
+        last_seen,
+        referral_code
       )
       VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
       )
       `,
       [
-        uid("usr"),
+        adminId,
         "Watchsave Admin",
         ADMIN_EMAIL,
         "",
@@ -145,10 +780,13 @@ async function ensureAdmin() {
         now(),
         null,
         null,
+        null,
       ]
     );
 
-    console.log("✅ Admin account created.");
+    console.log(
+      "✅ Admin account created."
+    );
   } else {
     await pool.query(
       `
@@ -165,14 +803,16 @@ async function ensureAdmin() {
       ]
     );
 
-    console.log("✅ Admin account verified.");
+    console.log(
+      "✅ Admin account verified."
+    );
   }
 }
 
 
-/* =========================
+/* =========================================================
    UPLOADS
-========================= */
+========================================================= */
 
 const upload =
   multer({
@@ -190,12 +830,12 @@ const upload =
 
         filename: (
           _,
-          f,
+          file,
           cb
         ) =>
           cb(
             null,
-            `${Date.now()}_${crypto.randomBytes(5).toString("hex")}${path.extname(f.originalname).toLowerCase() || ".mp4"}`
+            `${Date.now()}_${crypto.randomBytes(5).toString("hex")}${path.extname(file.originalname).toLowerCase() || ".mp4"}`
           ),
       }),
 
@@ -206,15 +846,15 @@ const upload =
 
     fileFilter: (
       _,
-      f,
+      file,
       cb
     ) =>
       cb(
         /^video\//.test(
-          f.mimetype
+          file.mimetype
         ) ||
           /\.(mp4|webm|ogg|mov|m4v)$/i.test(
-            f.originalname
+            file.originalname
           )
           ? null
           : new Error(
@@ -224,9 +864,9 @@ const upload =
   });
 
 
-/* =========================
+/* =========================================================
    MIDDLEWARE
-========================= */
+========================================================= */
 
 app.use(
   express.json({
@@ -243,15 +883,30 @@ app.use(
 app.use(cookieParser());
 
 
-/* =========================
+/* =========================================================
    CORS
-========================= */
+========================================================= */
+
+/*
+  IMPORTANT:
+  The frontend is being served locally on port 5500
+  while the backend runs on port 3000.
+
+  Both production and local origins are allowed.
+*/
 
 const allowedOrigins = [
+  // Production
   "https://watchsave.name.ng",
   "https://chubby1-ops.github.io",
+
+  // Local backend
   "http://localhost:3000",
   "http://127.0.0.1:3000",
+
+  // Local frontend
+  "http://localhost:5500",
+  "http://127.0.0.1:5500",
 ];
 
 app.use(
@@ -292,8 +947,7 @@ app.use(
     );
 
     if (
-      req.method ===
-      "OPTIONS"
+      req.method === "OPTIONS"
     ) {
       return res.sendStatus(204);
     }
@@ -313,14 +967,11 @@ app.use(
 );
 
 
-/* =========================
+/* =========================================================
    AUTHENTICATION
-========================= */
+========================================================= */
 
-function token(
-  u,
-  sid
-) {
+function token(u, sid) {
   return jwt.sign(
     {
       uid: u.id,
@@ -457,15 +1108,31 @@ async function current(req) {
     return {
       id: row.id,
       name: row.name,
+      username:
+        row.username || "",
       email: row.email,
       phone: row.phone || "",
-      balance: Number(row.balance || 0),
-      isAdmin: !!row.is_admin,
-      deleted: !!row.deleted,
-      joinedAt: row.joined_at,
-      lastLoginAt: row.last_login_at,
-      lastSeen: timestamp,
-      passwordHash: row.password_hash,
+      balance: money(
+        row.balance
+      ),
+      isAdmin:
+        !!row.is_admin,
+      deleted:
+        !!row.deleted,
+      joinedAt:
+        row.joined_at,
+      lastLoginAt:
+        row.last_login_at,
+      lastSeen:
+        timestamp,
+      referralCode:
+        row.referral_code || "",
+      referredBy:
+        row.referred_by || null,
+      referralQualified:
+        !!row.referral_qualified,
+      passwordHash:
+        row.password_hash,
     };
   } catch {
     return null;
@@ -516,22 +1183,35 @@ function admin(
 const pub = (u) => ({
   id: u.id,
   name: u.name,
+  username:
+    u.username || "",
   email: u.email,
   phone: u.phone || "",
-  balance: Number(
-    u.balance || 0
+  balance: money(
+    u.balance
   ),
-  isAdmin: !!u.isAdmin,
-  joinedAt: u.joinedAt,
+  isAdmin:
+    !!u.isAdmin,
+  joinedAt:
+    u.joinedAt,
   lastLoginAt:
     u.lastLoginAt,
-  lastSeen: u.lastSeen,
+  lastSeen:
+    u.lastSeen,
+  referralCode:
+    u.referralCode || "",
+  referralQualified:
+    !!u.referralQualified,
+  needsUsername:
+    !String(
+      u.username || ""
+    ).trim(),
 });
 
 
-/* =========================
+/* =========================================================
    HEALTH
-========================= */
+========================================================= */
 
 app.get(
   "/api/health",
@@ -544,7 +1224,8 @@ app.get(
       res.json({
         ok: true,
         time: now(),
-        database: "postgresql",
+        database:
+          "postgresql",
       });
     } catch (err) {
       console.error(
@@ -561,9 +1242,9 @@ app.get(
 );
 
 
-/* =========================
+/* =========================================================
    REGISTER
-========================= */
+========================================================= */
 
 app.post(
   "/api/auth/register",
@@ -577,6 +1258,14 @@ app.post(
           req.body.name ||
             ""
         ).trim();
+
+      const username =
+        String(
+          req.body.username ||
+            ""
+        )
+          .trim()
+          .toLowerCase();
 
       const email =
         String(
@@ -598,6 +1287,15 @@ app.post(
             ""
         );
 
+      const referralCode =
+        String(
+          req.body.referralCode ||
+            req.body.referral ||
+            ""
+        )
+          .trim()
+          .toUpperCase();
+
       if (
         name.length < 2
       ) {
@@ -606,6 +1304,20 @@ app.post(
           .json({
             error:
               "Enter your name.",
+          });
+      }
+
+      if (
+        username &&
+        !/^[a-z0-9_]{3,20}$/.test(
+          username
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Username must be 3-20 characters and use only letters, numbers, or underscores.",
           });
       }
 
@@ -633,6 +1345,20 @@ app.post(
           });
       }
 
+      if (
+        referralCode &&
+        !/^WS[A-Z0-9]{10}$/.test(
+          referralCode
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid referral code.",
+          });
+      }
+
       const existing =
         await pool.query(
           `
@@ -656,6 +1382,62 @@ app.post(
           });
       }
 
+      if (username) {
+        const usernameExists =
+          await pool.query(
+            `
+            SELECT id
+            FROM users
+            WHERE LOWER(username) = $1
+            AND deleted = FALSE
+            LIMIT 1
+            `,
+            [username]
+          );
+
+        if (
+          usernameExists.rows.length
+        ) {
+          return res
+            .status(409)
+            .json({
+              error:
+                "That username is already taken.",
+            });
+        }
+      }
+
+      let referrer = null;
+
+      if (referralCode) {
+        const referralResult =
+          await pool.query(
+            `
+            SELECT *
+            FROM users
+            WHERE referral_code = $1
+            AND deleted = FALSE
+            AND is_admin = FALSE
+            LIMIT 1
+            `,
+            [referralCode]
+          );
+
+        if (
+          referralResult.rows.length === 0
+        ) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "Referral code not found.",
+            });
+        }
+
+        referrer =
+          referralResult.rows[0];
+      }
+
       const timestamp =
         now();
 
@@ -671,11 +1453,15 @@ app.post(
       const sid =
         uid("ses");
 
+      const generatedReferralCode =
+        await uniqueReferralCode();
+
       await pool.query(
         `
         INSERT INTO users (
           id,
           name,
+          username,
           email,
           phone,
           password_hash,
@@ -684,15 +1470,19 @@ app.post(
           deleted,
           joined_at,
           last_login_at,
-          last_seen
+          last_seen,
+          referral_code,
+          referred_by,
+          referral_qualified
         )
         VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
         )
         `,
         [
           id,
           name,
+          username || null,
           email,
           phone,
           passwordHash,
@@ -702,6 +1492,11 @@ app.post(
           timestamp,
           timestamp,
           timestamp,
+          generatedReferralCode,
+          referrer
+            ? referrer.id
+            : null,
+          false,
         ]
       );
 
@@ -728,13 +1523,26 @@ app.post(
       const u = {
         id,
         name,
+        username:
+          username || "",
         email,
         phone,
         balance: 0,
         isAdmin: false,
-        joinedAt: timestamp,
-        lastLoginAt: timestamp,
-        lastSeen: timestamp,
+        joinedAt:
+          timestamp,
+        lastLoginAt:
+          timestamp,
+        lastSeen:
+          timestamp,
+        referralCode:
+          generatedReferralCode,
+        referredBy:
+          referrer
+            ? referrer.id
+            : null,
+        referralQualified:
+          false,
       };
 
       const accessToken =
@@ -778,9 +1586,9 @@ app.post(
 );
 
 
-/* =========================
+/* =========================================================
    LOGIN
-========================= */
+========================================================= */
 
 app.post(
   "/api/auth/login",
@@ -899,13 +1707,28 @@ app.post(
       const u = {
         id: row.id,
         name: row.name,
+        username:
+          row.username || "",
         email: row.email,
-        phone: row.phone || "",
-        balance: Number(row.balance || 0),
-        isAdmin: !!row.is_admin,
-        joinedAt: row.joined_at,
-        lastLoginAt: timestamp,
-        lastSeen: timestamp,
+        phone:
+          row.phone || "",
+        balance: money(
+          row.balance
+        ),
+        isAdmin:
+          !!row.is_admin,
+        joinedAt:
+          row.joined_at,
+        lastLoginAt:
+          timestamp,
+        lastSeen:
+          timestamp,
+        referralCode:
+          row.referral_code || "",
+        referredBy:
+          row.referred_by || null,
+        referralQualified:
+          !!row.referral_qualified,
       };
 
       const accessToken =
@@ -947,24 +1770,30 @@ app.post(
 );
 
 
-/* =========================
+/* =========================================================
    ADMIN PASSWORD LOGIN
-========================= */
+========================================================= */
 
 app.post(
   "/api/admin/login",
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const password =
         String(
-          req.body?.password || ""
+          req.body?.password ||
+            ""
         );
 
       if (!password) {
-        return res.status(400).json({
-          error:
-            "Admin password is required.",
-        });
+        return res
+          .status(400)
+          .json({
+            error:
+              "Admin password is required.",
+          });
       }
 
       const result =
@@ -983,10 +1812,12 @@ app.post(
       if (
         result.rows.length === 0
       ) {
-        return res.status(401).json({
-          error:
-            "Admin account not found.",
-        });
+        return res
+          .status(401)
+          .json({
+            error:
+              "Admin account not found.",
+          });
       }
 
       const row =
@@ -999,10 +1830,12 @@ app.post(
         );
 
       if (!passwordOk) {
-        return res.status(401).json({
-          error:
-            "Incorrect admin password.",
-        });
+        return res
+          .status(401)
+          .json({
+            error:
+              "Incorrect admin password.",
+          });
       }
 
       const timestamp =
@@ -1046,15 +1879,27 @@ app.post(
       const u = {
         id: row.id,
         name: row.name,
+        username:
+          row.username || "",
         email: row.email,
-        phone: row.phone || "",
-        balance: Number(
-          row.balance || 0
+        phone:
+          row.phone || "",
+        balance: money(
+          row.balance
         ),
         isAdmin: true,
-        joinedAt: row.joined_at,
-        lastLoginAt: timestamp,
-        lastSeen: timestamp,
+        joinedAt:
+          row.joined_at,
+        lastLoginAt:
+          timestamp,
+        lastSeen:
+          timestamp,
+        referralCode:
+          row.referral_code || "",
+        referredBy:
+          row.referred_by || null,
+        referralQualified:
+          !!row.referral_qualified,
       };
 
       const accessToken =
@@ -1075,7 +1920,8 @@ app.post(
 
       return res.json({
         ok: true,
-        token: accessToken,
+        token:
+          accessToken,
         user: pub(u),
       });
     } catch (err) {
@@ -1093,14 +1939,17 @@ app.post(
 );
 
 
-/* =========================
+/* =========================================================
    LOGOUT
-========================= */
+========================================================= */
 
 app.post(
   "/api/auth/logout",
   auth,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const t =
         getAuthToken(req);
@@ -1139,30 +1988,238 @@ app.post(
 );
 
 
-/* =========================
+/* =========================================================
    CURRENT USER
-========================= */
+========================================================= */
 
 app.get(
   "/api/auth/me",
   auth,
-  (req, res) =>
-    res.json({
-      user: pub(
-        req.user
-      ),
-    })
+  async (req, res) => {
+    try {
+      const maintenance =
+        req.user.isAdmin
+          ? false
+          : await getMaintenanceMode();
+
+      res.json({
+        user: pub(
+          req.user
+        ),
+        maintenance,
+        referralQualificationBalance:
+          REFERRAL_QUALIFICATION_BALANCE,
+      });
+    } catch (err) {
+      console.error(
+        "AUTH ME ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not load account.",
+      });
+    }
+  }
 );
 
 
-/* =========================
+/* =========================================================
+   USERNAME UPDATE
+========================================================= */
+
+app.patch(
+  "/api/auth/username",
+  auth,
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const username =
+        String(
+          req.body.username ||
+            ""
+        )
+          .trim()
+          .toLowerCase();
+
+      if (
+        !/^[a-z0-9_]{3,20}$/.test(
+          username
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Username must be 3-20 characters and use only letters, numbers, or underscores.",
+          });
+      }
+
+      const existing =
+        await pool.query(
+          `
+          SELECT id
+          FROM users
+          WHERE LOWER(username) = $1
+          AND id <> $2
+          AND deleted = FALSE
+          LIMIT 1
+          `,
+          [
+            username,
+            req.user.id,
+          ]
+        );
+
+      if (
+        existing.rows.length
+      ) {
+        return res
+          .status(409)
+          .json({
+            error:
+              "That username is already taken.",
+          });
+      }
+
+      const updated =
+        await pool.query(
+          `
+          UPDATE users
+          SET username = $1
+          WHERE id = $2
+          AND deleted = FALSE
+          RETURNING *
+          `,
+          [
+            username,
+            req.user.id,
+          ]
+        );
+
+      if (
+        updated.rows.length === 0
+      ) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "User not found.",
+          });
+      }
+
+      const row =
+        updated.rows[0];
+
+      res.json({
+        ok: true,
+        user: {
+          id: row.id,
+          name: row.name,
+          username:
+            row.username,
+          email: row.email,
+          phone:
+            row.phone || "",
+          balance: money(
+            row.balance
+          ),
+          referralCode:
+            row.referral_code ||
+            "",
+          needsUsername:
+            false,
+        },
+      });
+    } catch (err) {
+      console.error(
+        "USERNAME UPDATE ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not update username.",
+      });
+    }
+  }
+);
+
+
+/* =========================================================
+   REFERRAL INFO
+========================================================= */
+
+app.get(
+  "/api/referrals/me",
+  auth,
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const result =
+        await pool.query(
+          `
+          SELECT
+            COUNT(*) FILTER (
+              WHERE referral_qualified = TRUE
+            ) AS qualified,
+            COUNT(*) AS total
+          FROM users
+          WHERE referred_by = $1
+          AND deleted = FALSE
+          `,
+          [req.user.id]
+        );
+
+      const row =
+        result.rows[0];
+
+      res.json({
+        referralCode:
+          req.user.referralCode ||
+          "",
+        qualified:
+          Number(
+            row.qualified || 0
+          ),
+        total:
+          Number(
+            row.total || 0
+          ),
+        qualificationBalance:
+          REFERRAL_QUALIFICATION_BALANCE,
+      });
+    } catch (err) {
+      console.error(
+        "REFERRALS ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not load referral information.",
+      });
+    }
+  }
+);
+
+
+/* =========================================================
    PRESENCE
-========================= */
+========================================================= */
 
 app.post(
   "/api/presence",
   auth,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const timestamp =
         now();
@@ -1214,9 +2271,30 @@ app.post(
 );
 
 
-/* =========================
+/* =========================================================
+   MAINTENANCE STATUS
+========================================================= */
+
+app.get(
+  "/api/maintenance",
+  auth,
+  async (
+    req,
+    res
+  ) => {
+    res.json({
+      maintenance:
+        req.user.isAdmin
+          ? await getMaintenanceMode()
+          : await getMaintenanceMode(),
+    });
+  }
+);
+
+
+/* =========================================================
    VIDEOS
-========================= */
+========================================================= */
 
 function pv(v) {
   return {
@@ -1226,8 +2304,8 @@ function pv(v) {
       v.description || "",
     type: v.type,
     source: v.source,
-    reward: Number(
-      v.reward || 0
+    reward: money(
+      v.reward
     ),
     duration: Number(
       v.duration || 30
@@ -1237,7 +2315,8 @@ function pv(v) {
     active:
       v.active !== false,
     createdAt:
-      v.createdAt || v.created_at,
+      v.createdAt ||
+      v.created_at,
   };
 }
 
@@ -1245,21 +2324,33 @@ function videoFromRow(row) {
   return {
     id: row.id,
     title: row.title,
-    description: row.description,
+    description:
+      row.description || "",
     type: row.type,
     source: row.source,
-    reward: Number(row.reward || 0),
-    duration: Number(row.duration || 30),
-    command: row.command || "",
-    active: !!row.active,
-    createdAt: row.created_at,
+    reward: money(
+      row.reward
+    ),
+    duration: Number(
+      row.duration || 30
+    ),
+    command:
+      row.command || "",
+    active:
+      !!row.active,
+    createdAt:
+      row.created_at,
   };
 }
 
 app.get(
   "/api/videos",
   auth,
-  async (req, res) => {
+  maintenance,
+  async (
+    req,
+    res
+  ) => {
     try {
       const result =
         await pool.query(
@@ -1292,14 +2383,18 @@ app.get(
 );
 
 
-/* =========================
+/* =========================================================
    CLAIM VIDEO
-========================= */
+========================================================= */
 
 app.post(
   "/api/videos/:id/claim",
   auth,
-  async (req, res) => {
+  maintenance,
+  async (
+    req,
+    res
+  ) => {
     const client =
       await pool.connect();
 
@@ -1351,7 +2446,10 @@ app.post(
             claimed_at
           )
           VALUES ($1,$2,$3,$4)
-          ON CONFLICT (video_id, user_id)
+          ON CONFLICT (
+            video_id,
+            user_id
+          )
           DO NOTHING
           RETURNING id
           `,
@@ -1379,14 +2477,16 @@ app.post(
       }
 
       const reward =
-        Number(v.reward || 0);
+        money(v.reward);
 
       const balanceResult =
         await client.query(
           `
           UPDATE users
-          SET balance = balance + $1,
-              last_seen = $2
+          SET
+            balance =
+              balance + $1,
+            last_seen = $2
           WHERE id = $3
           AND deleted = FALSE
           RETURNING balance
@@ -1398,6 +2498,34 @@ app.post(
           ]
         );
 
+      if (
+        balanceResult.rows.length === 0
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res
+          .status(404)
+          .json({
+            error:
+              "User not found.",
+          });
+      }
+
+      const newBalance =
+        money(
+          balanceResult
+            .rows[0]
+            .balance
+        );
+
+      await checkReferralQualification(
+        client,
+        req.user.id,
+        newBalance
+      );
+
       await client.query(
         "COMMIT"
       );
@@ -1406,15 +2534,14 @@ app.post(
         ok: true,
         reward,
         balance:
-          Number(
-            balanceResult.rows[0]
-              .balance
-          ),
+          newBalance,
       });
     } catch (err) {
-      await client.query(
-        "ROLLBACK"
-      );
+      try {
+        await client.query(
+          "ROLLBACK"
+        );
+      } catch {}
 
       console.error(
         "CLAIM ERROR:",
@@ -1432,14 +2559,17 @@ app.post(
 );
 
 
-/* =========================
+/* =========================================================
    HISTORY
-========================= */
+========================================================= */
 
 app.get(
   "/api/history",
   auth,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const result =
         await pool.query(
@@ -1463,9 +2593,10 @@ app.get(
           result.rows.map(
             (row) => ({
               id: row.id,
-              title: row.title,
-              reward: Number(
-                row.reward || 0
+              title:
+                row.title,
+              reward: money(
+                row.reward
               ),
               claimedAt:
                 row.claimed_at,
@@ -1487,9 +2618,9 @@ app.get(
 );
 
 
-/* =========================
+/* =========================================================
    BANKS
-========================= */
+========================================================= */
 
 const BANKS = [
   ["Access Bank", "044"],
@@ -1524,6 +2655,7 @@ const BANKS = [
 app.get(
   "/api/banks",
   auth,
+  maintenance,
   (_, res) =>
     res.json({
       banks: BANKS,
@@ -1531,14 +2663,33 @@ app.get(
 );
 
 
-/* =========================
+/* =========================================================
    WITHDRAWALS
-========================= */
+========================================================= */
 
 app.post(
   "/api/withdrawals",
   auth,
-  async (req, res) => {
+  maintenance,
+  async (
+    req,
+    res
+  ) => {
+    if (
+      !String(
+        req.user.username || ""
+      ).trim()
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Please set your username before requesting a withdrawal.",
+          code:
+            "USERNAME_REQUIRED",
+        });
+    }
+
     const amount =
       Number(
         req.body.amount
@@ -1546,8 +2697,7 @@ app.post(
 
     const account =
       String(
-        req.body.account ||
-          ""
+        req.body.account || ""
       ).replace(
         /\D/g,
         ""
@@ -1572,18 +2722,24 @@ app.post(
       ).trim();
 
     if (
-      !Number.isFinite(amount) ||
+      !Number.isFinite(
+        amount
+      ) ||
       amount < MIN_WITHDRAWAL
     ) {
       return res
         .status(400)
         .json({
-          error: `You can request withdrawal from ₦${MIN_WITHDRAWAL.toFixed(2)} and above.`,
+          error: `You can request withdrawal from ₦${MIN_WITHDRAWAL.toFixed(
+            2
+          )} and above.`,
         });
     }
 
     if (
-      !/^\d{10}$/.test(account)
+      !/^\d{10}$/.test(
+        account
+      )
     ) {
       return res
         .status(400)
@@ -1652,8 +2808,8 @@ app.post(
         userResult.rows[0];
 
       const balance =
-        Number(
-          user.balance || 0
+        money(
+          user.balance
         );
 
       if (
@@ -1672,7 +2828,9 @@ app.post(
       }
 
       const newBalance =
-        balance - amount;
+        money(
+          balance - amount
+        );
 
       await client.query(
         `
@@ -1798,7 +2956,9 @@ app.post(
           messageId,
           chat.id,
           "system",
-          `Withdrawal request of ₦${amount.toFixed(2)} submitted. The admin can contact you here.`,
+          `Withdrawal request of ₦${amount.toFixed(
+            2
+          )} submitted. The admin can contact you here.`,
           now(),
         ]
       );
@@ -1809,13 +2969,17 @@ app.post(
 
       res.json({
         ok: true,
-        balance: newBalance,
-        chatId: chat.id,
+        balance:
+          newBalance,
+        chatId:
+          chat.id,
       });
     } catch (err) {
-      await client.query(
-        "ROLLBACK"
-      );
+      try {
+        await client.query(
+          "ROLLBACK"
+        );
+      } catch {}
 
       console.error(
         "WITHDRAWAL ERROR:",
@@ -1835,7 +2999,10 @@ app.post(
 app.get(
   "/api/withdrawals",
   auth,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const result =
         await pool.query(
@@ -1863,8 +3030,8 @@ app.get(
           result.rows.map(
             (w) => ({
               ...w,
-              amount: Number(
-                w.amount || 0
+              amount: money(
+                w.amount
               ),
             })
           ),
@@ -1884,14 +3051,17 @@ app.get(
 );
 
 
-/* =========================
+/* =========================================================
    USER CHAT
-========================= */
+========================================================= */
 
 app.get(
   "/api/chat/me",
   auth,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const chatResult =
         await pool.query(
@@ -1958,7 +3128,10 @@ app.get(
 app.post(
   "/api/chat/me/messages",
   auth,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     const text =
       String(
         req.body.text ||
@@ -2004,8 +3177,12 @@ app.post(
         id: uid("msg"),
         sender: "user",
         text:
-          text.slice(0, 2000),
-        createdAt: now(),
+          text.slice(
+            0,
+            2000
+          ),
+        createdAt:
+          now(),
       };
 
       await pool.query(
@@ -2059,23 +3236,36 @@ app.post(
 );
 
 
-/* =========================
+/* =========================================================
    ADMIN CHATS
-========================= */
+========================================================= */
 
 app.get(
   "/api/admin/chats",
   auth,
   admin,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const chatsResult =
         await pool.query(
           `
           SELECT
             c.*,
-            COALESCE(u.name, 'Deleted user') AS user_name,
-            COALESCE(u.email, '') AS user_email
+            COALESCE(
+              u.name,
+              'Deleted user'
+            ) AS user_name,
+            COALESCE(
+              u.username,
+              ''
+            ) AS user_username,
+            COALESCE(
+              u.email,
+              ''
+            ) AS user_email
           FROM chats c
           LEFT JOIN users u
             ON u.id = c.user_id
@@ -2086,7 +3276,8 @@ app.get(
       const chats = [];
 
       for (
-        const row of chatsResult.rows
+        const row of
+          chatsResult.rows
       ) {
         const messages =
           await pool.query(
@@ -2105,9 +3296,14 @@ app.get(
 
         chats.push({
           id: row.id,
-          userId: row.user_id,
-          userName: row.user_name,
-          userEmail: row.user_email,
+          userId:
+            row.user_id,
+          userName:
+            row.user_name,
+          userUsername:
+            row.user_username,
+          userEmail:
+            row.user_email,
           createdAt:
             row.created_at,
           updatedAt:
@@ -2138,7 +3334,10 @@ app.post(
   "/api/admin/chats/:id/messages",
   auth,
   admin,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     const text =
       String(
         req.body.text ||
@@ -2181,8 +3380,12 @@ app.post(
         id: uid("msg"),
         sender: "admin",
         text:
-          text.slice(0, 2000),
-        createdAt: now(),
+          text.slice(
+            0,
+            2000
+          ),
+        createdAt:
+          now(),
       };
 
       await pool.query(
@@ -2236,15 +3439,18 @@ app.post(
 );
 
 
-/* =========================
+/* =========================================================
    ADMIN STATS
-========================= */
+========================================================= */
 
 app.get(
   "/api/admin/stats",
   auth,
   admin,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       await clean();
 
@@ -2252,6 +3458,7 @@ app.get(
         await pool.query(
           `
           SELECT
+
             (
               SELECT COUNT(*)
               FROM users
@@ -2262,7 +3469,8 @@ app.get(
             (
               SELECT COUNT(DISTINCT user_id)
               FROM sessions
-              WHERE last_seen >= NOW() - INTERVAL '90 seconds'
+              WHERE last_seen >=
+                NOW() - INTERVAL '90 seconds'
             ) AS online,
 
             (
@@ -2284,15 +3492,23 @@ app.get(
 
       res.json({
         users:
-          Number(row.users),
+          Number(
+            row.users
+          ),
         online:
-          Number(row.online),
+          Number(
+            row.online
+          ),
         videos:
-          Number(row.videos),
+          Number(
+            row.videos
+          ),
         pendingWithdrawals:
           Number(
             row.pending_withdrawals
           ),
+        maintenance:
+          await getMaintenanceMode(),
       });
     } catch (err) {
       console.error(
@@ -2309,15 +3525,89 @@ app.get(
 );
 
 
-/* =========================
+/* =========================================================
+   ADMIN MAINTENANCE CONTROL
+========================================================= */
+
+app.get(
+  "/api/admin/maintenance",
+  auth,
+  admin,
+  async (
+    req,
+    res
+  ) => {
+    try {
+      res.json({
+        maintenance:
+          await getMaintenanceMode(),
+      });
+    } catch (err) {
+      console.error(
+        "ADMIN MAINTENANCE READ ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not read maintenance status.",
+      });
+    }
+  }
+);
+
+app.patch(
+  "/api/admin/maintenance",
+  auth,
+  admin,
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const active =
+        req.body.active === true ||
+        String(
+          req.body.active
+        ).toLowerCase() ===
+          "true";
+
+      await setMaintenanceMode(
+        active
+      );
+
+      res.json({
+        ok: true,
+        maintenance:
+          active,
+      });
+    } catch (err) {
+      console.error(
+        "ADMIN MAINTENANCE UPDATE ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not update maintenance mode.",
+      });
+    }
+  }
+);
+
+
+/* =========================================================
    ADMIN USERS
-========================= */
+========================================================= */
 
 app.get(
   "/api/admin/users",
   auth,
   admin,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       await clean();
 
@@ -2326,15 +3616,35 @@ app.get(
           `
           SELECT
             u.*,
+
             EXISTS (
               SELECT 1
               FROM sessions s
               WHERE s.user_id = u.id
-              AND s.last_seen >= NOW() - INTERVAL '90 seconds'
-            ) AS online
+              AND s.last_seen >=
+                NOW() - INTERVAL '90 seconds'
+            ) AS online,
+
+            (
+              SELECT COUNT(*)
+              FROM video_claims vc
+              WHERE vc.user_id = u.id
+            ) AS videos_watched,
+
+            (
+              SELECT COUNT(*)
+              FROM users r
+              WHERE r.referred_by = u.id
+              AND r.referral_qualified = TRUE
+              AND r.deleted = FALSE
+            ) AS qualified_referrals
+
           FROM users u
+
           WHERE u.is_admin = FALSE
-          ORDER BY u.joined_at DESC
+
+          ORDER BY
+            u.joined_at DESC
           `
         );
 
@@ -2343,12 +3653,18 @@ app.get(
           result.rows.map(
             (u) => ({
               id: u.id,
-              name: u.name,
-              email: u.email,
-              phone: u.phone || "",
-              balance: Number(
-                u.balance || 0
-              ),
+              name:
+                u.name,
+              username:
+                u.username || "",
+              email:
+                u.email,
+              phone:
+                u.phone || "",
+              balance:
+                money(
+                  u.balance
+                ),
               isAdmin:
                 !!u.is_admin,
               joinedAt:
@@ -2361,6 +3677,26 @@ app.get(
                 !!u.deleted,
               online:
                 !!u.online,
+              videosWatched:
+                Number(
+                  u.videos_watched ||
+                    0
+                ),
+              qualifiedReferrals:
+                Number(
+                  u.qualified_referrals ||
+                    0
+                ),
+              referralCode:
+                u.referral_code ||
+                "",
+              referralQualified:
+                !!u.referral_qualified,
+              needsUsername:
+                !String(
+                  u.username ||
+                    ""
+                ).trim(),
             })
           ),
       });
@@ -2378,11 +3714,427 @@ app.get(
   }
 );
 
+
+/* =========================================================
+   ADMIN ADD MONEY
+========================================================= */
+
+app.post(
+  "/api/admin/users/:id/balance/add",
+  auth,
+  admin,
+  async (
+    req,
+    res
+  ) => {
+    const amount =
+      Number(
+        req.body.amount
+      );
+
+    const reason =
+      String(
+        req.body.reason ||
+          "Admin gift"
+      ).trim();
+
+    if (
+      !Number.isFinite(
+        amount
+      ) ||
+      amount <= 0
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Enter a valid amount greater than zero.",
+        });
+    }
+
+    if (
+      amount > 100000000
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Amount is too large.",
+        });
+    }
+
+    const client =
+      await pool.connect();
+
+    try {
+      await client.query(
+        "BEGIN"
+      );
+
+      const userResult =
+        await client.query(
+          `
+          SELECT *
+          FROM users
+          WHERE id = $1
+          AND is_admin = FALSE
+          AND deleted = FALSE
+          FOR UPDATE
+          `,
+          [req.params.id]
+        );
+
+      if (
+        userResult.rows.length === 0
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res
+          .status(404)
+          .json({
+            error:
+              "User not found.",
+          });
+      }
+
+      const updated =
+        await client.query(
+          `
+          UPDATE users
+          SET balance =
+            balance + $1
+          WHERE id = $2
+          RETURNING balance
+          `,
+          [
+            amount,
+            req.params.id,
+          ]
+        );
+
+      const newBalance =
+        money(
+          updated.rows[0]
+            .balance
+        );
+
+      await client.query(
+        `
+        INSERT INTO balance_adjustments (
+          id,
+          user_id,
+          admin_id,
+          direction,
+          amount,
+          reason,
+          created_at
+        )
+        VALUES (
+          $1,$2,$3,$4,$5,$6,$7
+        )
+        `,
+        [
+          uid("bal"),
+          req.params.id,
+          req.user.id,
+          "add",
+          amount,
+          reason,
+          now(),
+        ]
+      );
+
+      await checkReferralQualification(
+        client,
+        req.params.id,
+        newBalance
+      );
+
+      await client.query(
+        "COMMIT"
+      );
+
+      res.json({
+        ok: true,
+        balance:
+          newBalance,
+      });
+    } catch (err) {
+      try {
+        await client.query(
+          "ROLLBACK"
+        );
+      } catch {}
+
+      console.error(
+        "ADD MONEY ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not add money.",
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+
+/* =========================================================
+   ADMIN REMOVE MONEY
+========================================================= */
+
+app.post(
+  "/api/admin/users/:id/balance/remove",
+  auth,
+  admin,
+  async (
+    req,
+    res
+  ) => {
+    const amount =
+      Number(
+        req.body.amount
+      );
+
+    const reason =
+      String(
+        req.body.reason ||
+          "Admin adjustment"
+      ).trim();
+
+    if (
+      !Number.isFinite(
+        amount
+      ) ||
+      amount <= 0
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Enter a valid amount greater than zero.",
+        });
+    }
+
+    const client =
+      await pool.connect();
+
+    try {
+      await client.query(
+        "BEGIN"
+      );
+
+      const userResult =
+        await client.query(
+          `
+          SELECT *
+          FROM users
+          WHERE id = $1
+          AND is_admin = FALSE
+          AND deleted = FALSE
+          FOR UPDATE
+          `,
+          [req.params.id]
+        );
+
+      if (
+        userResult.rows.length === 0
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res
+          .status(404)
+          .json({
+            error:
+              "User not found.",
+          });
+      }
+
+      const currentBalance =
+        money(
+          userResult.rows[0]
+            .balance
+        );
+
+      if (
+        amount >
+        currentBalance
+      ) {
+        await client.query(
+          "ROLLBACK"
+        );
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "Cannot remove more than the user's current balance.",
+          });
+      }
+
+      const updated =
+        await client.query(
+          `
+          UPDATE users
+          SET balance =
+            balance - $1
+          WHERE id = $2
+          RETURNING balance
+          `,
+          [
+            amount,
+            req.params.id,
+          ]
+        );
+
+      const newBalance =
+        money(
+          updated.rows[0]
+            .balance
+        );
+
+      await client.query(
+        `
+        INSERT INTO balance_adjustments (
+          id,
+          user_id,
+          admin_id,
+          direction,
+          amount,
+          reason,
+          created_at
+        )
+        VALUES (
+          $1,$2,$3,$4,$5,$6,$7
+        )
+        `,
+        [
+          uid("bal"),
+          req.params.id,
+          req.user.id,
+          "remove",
+          amount,
+          reason,
+          now(),
+        ]
+      );
+
+      await client.query(
+        "COMMIT"
+      );
+
+      res.json({
+        ok: true,
+        balance:
+          newBalance,
+      });
+    } catch (err) {
+      try {
+        await client.query(
+          "ROLLBACK"
+        );
+      } catch {}
+
+      console.error(
+        "REMOVE MONEY ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not remove money.",
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+
+/* =========================================================
+   ADMIN BALANCE HISTORY
+========================================================= */
+
+app.get(
+  "/api/admin/users/:id/balance-history",
+  auth,
+  admin,
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const result =
+        await pool.query(
+          `
+          SELECT
+            b.id,
+            b.user_id AS "userId",
+            b.admin_id AS "adminId",
+            b.direction,
+            b.amount,
+            b.reason,
+            b.created_at AS "createdAt",
+            COALESCE(
+              u.name,
+              'Admin'
+            ) AS "adminName"
+          FROM balance_adjustments b
+          LEFT JOIN users u
+            ON u.id = b.admin_id
+          WHERE b.user_id = $1
+          ORDER BY
+            b.created_at DESC
+          `,
+          [req.params.id]
+        );
+
+      res.json({
+        history:
+          result.rows.map(
+            (row) => ({
+              ...row,
+              amount:
+                money(
+                  row.amount
+                ),
+            })
+          ),
+      });
+    } catch (err) {
+      console.error(
+        "BALANCE HISTORY ERROR:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Could not load balance history.",
+      });
+    }
+  }
+);
+
+
+/* =========================================================
+   DELETE USER
+========================================================= */
+
 app.delete(
   "/api/admin/users/:id",
   auth,
   admin,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const result =
         await pool.query(
@@ -2442,15 +4194,18 @@ app.delete(
 );
 
 
-/* =========================
+/* =========================================================
    ADMIN VIDEOS
-========================= */
+========================================================= */
 
 app.get(
   "/api/admin/videos",
   auth,
   admin,
-  async (_, res) => {
+  async (
+    _,
+    res
+  ) => {
     try {
       const result =
         await pool.query(
@@ -2554,15 +4309,18 @@ function kind(x) {
 }
 
 
-/* =========================
+/* =========================================================
    PUBLISH URL VIDEO
-========================= */
+========================================================= */
 
 app.post(
   "/api/admin/videos/url",
   auth,
   admin,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     const title =
       String(
         req.body.title ||
@@ -2622,7 +4380,9 @@ app.post(
     }
 
     if (
-      !Number.isFinite(reward) ||
+      !Number.isFinite(
+        reward
+      ) ||
       reward < 0
     ) {
       return res
@@ -2697,17 +4457,20 @@ app.post(
 );
 
 
-/* =========================
+/* =========================================================
    UPLOAD VIDEO
-   CLOUDINARY VERSION
-========================= */
+   CLOUDINARY
+========================================================= */
 
 app.post(
   "/api/admin/videos/upload",
   auth,
   admin,
   upload.single("video"),
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     if (!req.file) {
       return res
         .status(400)
@@ -2727,7 +4490,9 @@ app.post(
       );
 
     if (
-      !Number.isFinite(reward) ||
+      !Number.isFinite(
+        reward
+      ) ||
       reward < 0
     ) {
       try {
@@ -2798,10 +4563,14 @@ app.post(
         await cloudinary.uploader.upload(
           tempFile,
           {
-            resource_type: "video",
-            folder: "watchsave/videos",
-            public_id: v.id,
-            overwrite: false,
+            resource_type:
+              "video",
+            folder:
+              "watchsave/videos",
+            public_id:
+              v.id,
+            overwrite:
+              false,
             type: "upload",
           }
         );
@@ -2811,11 +4580,6 @@ app.post(
 
       v.source =
         uploaded.secure_url;
-
-      console.log(
-        "✅ Cloudinary upload successful:",
-        v.source
-      );
 
       await pool.query(
         `
@@ -2855,10 +4619,6 @@ app.post(
         );
       } catch {}
 
-      console.log(
-        "✅ Video saved to PostgreSQL."
-      );
-
       res.json({
         video: pv(v),
       });
@@ -2881,18 +4641,7 @@ app.post(
               type: "upload",
             }
           );
-
-          console.log(
-            "Cloudinary upload rolled back."
-          );
-        } catch (
-          cloudinaryErr
-        ) {
-          console.error(
-            "CLOUDINARY ROLLBACK ERROR:",
-            cloudinaryErr
-          );
-        }
+        } catch {}
       }
 
       console.error(
@@ -2909,15 +4658,18 @@ app.post(
 );
 
 
-/* =========================
+/* =========================================================
    EDIT VIDEO
-========================= */
+========================================================= */
 
 app.patch(
   "/api/admin/videos/:id",
   auth,
   admin,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const existing =
         await pool.query(
@@ -2945,10 +4697,12 @@ app.patch(
         existing.rows[0];
 
       let reward =
-        Number(v.reward || 0);
+        money(v.reward);
 
       let duration =
-        Number(v.duration || 30);
+        Number(
+          v.duration || 30
+        );
 
       let command =
         v.command || "";
@@ -3074,16 +4828,18 @@ app.patch(
 );
 
 
-/* =========================
+/* =========================================================
    DELETE VIDEO
-   CLOUDINARY VERSION
-========================= */
+========================================================= */
 
 app.delete(
   "/api/admin/videos/:id",
   auth,
   admin,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const result =
         await pool.query(
@@ -3115,23 +4871,13 @@ app.delete(
         "upload"
       ) {
         try {
-          console.log(
-            "Deleting video from Cloudinary..."
-          );
-
-          const cloudinaryResult =
-            await cloudinary.uploader.destroy(
-              `watchsave/videos/${v.id}`,
-              {
-                resource_type:
-                  "video",
-                type: "upload",
-              }
-            );
-
-          console.log(
-            "Cloudinary delete result:",
-            cloudinaryResult
+          await cloudinary.uploader.destroy(
+            `watchsave/videos/${v.id}`,
+            {
+              resource_type:
+                "video",
+              type: "upload",
+            }
           );
         } catch (
           cloudinaryErr
@@ -3158,10 +4904,6 @@ app.delete(
         [req.params.id]
       );
 
-      console.log(
-        "✅ Video deleted from database."
-      );
-
       res.json({
         ok: true,
       });
@@ -3180,15 +4922,18 @@ app.delete(
 );
 
 
-/* =========================
+/* =========================================================
    ADMIN WITHDRAWALS
-========================= */
+========================================================= */
 
 app.get(
   "/api/admin/withdrawals",
   auth,
   admin,
-  async (_, res) => {
+  async (
+    _,
+    res
+  ) => {
     try {
       const result =
         await pool.query(
@@ -3204,12 +4949,23 @@ app.get(
             w.status,
             w.created_at AS "createdAt",
             w.processed_at AS "processedAt",
-            COALESCE(u.name, 'Deleted user') AS "userName",
-            COALESCE(u.email, '') AS "userEmail"
+            COALESCE(
+              u.name,
+              'Deleted user'
+            ) AS "userName",
+            COALESCE(
+              u.username,
+              ''
+            ) AS "userUsername",
+            COALESCE(
+              u.email,
+              ''
+            ) AS "userEmail"
           FROM withdrawals w
           LEFT JOIN users u
             ON u.id = w.user_id
-          ORDER BY w.created_at DESC
+          ORDER BY
+            w.created_at DESC
           `
         );
 
@@ -3219,8 +4975,8 @@ app.get(
             (w) => ({
               ...w,
               amount:
-                Number(
-                  w.amount || 0
+                money(
+                  w.amount
                 ),
             })
           ),
@@ -3243,7 +4999,10 @@ app.patch(
   "/api/admin/withdrawals/:id",
   auth,
   admin,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     const status =
       String(
         req.body.status ||
@@ -3339,20 +5098,34 @@ app.patch(
         status ===
         "rejected"
       ) {
-        await client.query(
-          `
-          UPDATE users
-          SET balance = balance + $1
-          WHERE id = $2
-          AND deleted = FALSE
-          `,
-          [
-            Number(
-              w.amount
-            ),
+        const restored =
+          await client.query(
+            `
+            UPDATE users
+            SET balance =
+              balance + $1
+            WHERE id = $2
+            AND deleted = FALSE
+            RETURNING balance
+            `,
+            [
+              money(w.amount),
+              w.user_id,
+            ]
+          );
+
+        if (
+          restored.rows.length
+        ) {
+          await checkReferralQualification(
+            client,
             w.user_id,
-          ]
-        );
+            money(
+              restored.rows[0]
+                .balance
+            )
+          );
+        }
       }
 
       await client.query(
@@ -3363,9 +5136,11 @@ app.patch(
         ok: true,
       });
     } catch (err) {
-      await client.query(
-        "ROLLBACK"
-      );
+      try {
+        await client.query(
+          "ROLLBACK"
+        );
+      } catch {}
 
       console.error(
         "ADMIN WITHDRAWAL ERROR:",
@@ -3383,9 +5158,9 @@ app.patch(
 );
 
 
-/* =========================
+/* =========================================================
    STATIC FRONTEND
-========================= */
+========================================================= */
 
 app.use(
   "/uploads",
@@ -3404,9 +5179,9 @@ app.use(
 );
 
 
-/* =========================
+/* =========================================================
    ERROR HANDLER
-========================= */
+========================================================= */
 
 app.use(
   (
@@ -3417,6 +5192,12 @@ app.use(
   ) => {
     console.error(err);
 
+    if (
+      res.headersSent
+    ) {
+      return next(err);
+    }
+
     res.status(400).json({
       error:
         err.message ||
@@ -3426,15 +5207,17 @@ app.use(
 );
 
 
-/* =========================
+/* =========================================================
    START
-========================= */
+========================================================= */
 
 async function start() {
   try {
     await pool.query(
       "SELECT 1"
     );
+
+    await ensureSchema();
 
     await ensureAdmin();
 
@@ -3459,6 +5242,14 @@ async function start() {
         console.log(
           "Cloudinary: configured"
         );
+
+        console.log(
+          `Referral qualification: ₦${REFERRAL_QUALIFICATION_BALANCE}`
+        );
+
+        console.log(
+          "Maintenance system: enabled"
+        );
       }
     );
   } catch (err) {
@@ -3473,4 +5264,3 @@ async function start() {
 }
 
 start();
-

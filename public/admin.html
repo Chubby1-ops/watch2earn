@@ -643,6 +643,35 @@
       </section>
 
       <!-- ===================================================
+      <!-- ===================================================
+           REFERRAL SETTINGS
+           =================================================== -->
+
+      <section class="pane" id="referrals">
+        <div class="forms">
+          <div class="admin-card">
+            <h2>Referral Settings</h2>
+            <p>Control the number of successful referrals required and the reward amount.</p>
+
+            <form id="referralSettingsForm">
+              <label>
+                Required successful referrals
+                <input id="referralRequired" type="number" min="1" step="1" value="10" required>
+              </label>
+
+              <label>
+                Referral reward ₦
+                <input id="referralReward" type="number" min="1" step="1" value="1500" required>
+              </label>
+
+              <p id="referralQualificationInfo">A referral becomes successful after the referred user reaches the qualification balance.</p>
+
+              <button id="saveReferralSettings" class="primary" type="submit">Save Referral Settings</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
            VIDEOS
            =================================================== -->
 

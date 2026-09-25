@@ -49,7 +49,6 @@ async function api(u, o = {}) {
   }
 
   /*
-    IMPORTANT:
     Do NOT manually set Content-Type
     when sending FormData.
   */
@@ -101,6 +100,281 @@ function toast(
         "toast"),
     3000,
   );
+}
+
+/* =========================
+   ADMIN EXTRA STYLES
+========================= */
+
+function addAdminExtraStyles() {
+  if ($("#watchsaveAdminExtraStyles")) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "watchsaveAdminExtraStyles";
+
+  style.textContent = `
+    .ws-maintenance-control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: 12px;
+    }
+
+    .ws-maintenance-btn {
+      border: 1px solid rgba(255,122,0,.35);
+      background: rgba(255,122,0,.10);
+      color: #ff9a3d;
+      border-radius: 10px;
+      padding: 9px 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: .2s ease;
+    }
+
+    .ws-maintenance-btn:hover {
+      background: rgba(255,122,0,.18);
+      transform: translateY(-1px);
+    }
+
+    .ws-maintenance-btn.active {
+      background: #ff7900;
+      color: #fff;
+      border-color: #ff7900;
+    }
+
+    .ws-maintenance-status {
+      font-size: 12px;
+      font-weight: 700;
+      color: #aaa;
+    }
+
+    .ws-user-grid {
+      display: grid;
+      grid-template-columns:
+        minmax(180px, 1.4fr)
+        minmax(130px, 1fr)
+        minmax(180px, 1.4fr)
+        minmax(130px, 1fr)
+        minmax(120px, .8fr);
+      gap: 6px 18px;
+      margin-top: 7px;
+    }
+
+    .ws-user-grid small {
+      display: block;
+      color: rgba(255,255,255,.58);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .ws-balance {
+      color: #ff9a3d !important;
+      font-weight: 800;
+      font-size: 14px !important;
+    }
+
+    .ws-referral {
+      color: #ddd !important;
+    }
+
+    .ws-user-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .ws-user-actions .mini {
+      white-space: nowrap;
+    }
+
+    .ws-money-add {
+      border-color: rgba(50,200,120,.35) !important;
+      color: #65d99b !important;
+    }
+
+    .ws-money-remove {
+      border-color: rgba(255,90,90,.35) !important;
+      color: #ff7777 !important;
+    }
+
+    .ws-history {
+      margin-top: 12px;
+      border-top: 1px solid rgba(255,255,255,.08);
+      padding-top: 12px;
+      display: none;
+    }
+
+    .ws-history.open {
+      display: block;
+    }
+
+    .ws-history-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 15px;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+
+    .ws-history-item:last-child {
+      border-bottom: 0;
+    }
+
+    .ws-history-positive {
+      color: #65d99b;
+      font-weight: 800;
+    }
+
+    .ws-history-negative {
+      color: #ff7777;
+      font-weight: 800;
+    }
+
+    .ws-history-item small {
+      display: block;
+      color: rgba(255,255,255,.55);
+      margin-top: 3px;
+    }
+
+    .ws-modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(0,0,0,.72);
+      backdrop-filter: blur(8px);
+    }
+
+    .ws-modal-overlay.show {
+      display: flex;
+    }
+
+    .ws-modal-card {
+      width: min(460px, 100%);
+      background:
+        linear-gradient(
+          145deg,
+          rgba(25,25,25,.99),
+          rgba(8,8,8,.99)
+        );
+      border: 1px solid rgba(255,122,0,.25);
+      border-radius: 20px;
+      padding: 25px;
+      box-shadow:
+        0 30px 100px rgba(0,0,0,.65),
+        0 0 50px rgba(255,122,0,.07);
+    }
+
+    .ws-modal-card h2 {
+      margin: 0 0 7px;
+    }
+
+    .ws-modal-card p {
+      margin: 0 0 20px;
+      color: rgba(255,255,255,.62);
+      line-height: 1.5;
+    }
+
+    .ws-modal-card label {
+      display: block;
+      margin: 13px 0 6px;
+      font-size: 13px;
+      color: rgba(255,255,255,.7);
+    }
+
+    .ws-modal-card input,
+    .ws-modal-card textarea {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: #111;
+      color: #fff;
+      outline: none;
+      resize: vertical;
+    }
+
+    .ws-modal-card input:focus,
+    .ws-modal-card textarea:focus {
+      border-color: #ff7900;
+    }
+
+    .ws-modal-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 20px;
+    }
+
+    .ws-modal-actions button {
+      border: 0;
+      border-radius: 10px;
+      padding: 11px 16px;
+      cursor: pointer;
+      font-weight: 800;
+    }
+
+    .ws-modal-cancel {
+      background: rgba(255,255,255,.08);
+      color: #fff;
+    }
+
+    .ws-modal-confirm {
+      background: #ff7900;
+      color: #fff;
+    }
+
+    .ws-modal-confirm.danger {
+      background: #b83232;
+    }
+
+    .ws-maintenance-banner {
+      margin: 12px 0;
+      padding: 13px 15px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,122,0,.25);
+      background: rgba(255,122,0,.08);
+      color: #ff9a3d;
+      font-size: 13px;
+      font-weight: 700;
+      display: none;
+    }
+
+    .ws-maintenance-banner.show {
+      display: block;
+    }
+
+    @media (max-width: 900px) {
+      .ws-user-grid {
+        grid-template-columns:
+          1fr 1fr;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .ws-user-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .ws-maintenance-control {
+        margin-left: 0;
+        margin-top: 8px;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
 }
 
 /* =========================
@@ -197,6 +471,186 @@ async function stats() {
 
   $("#sp").textContent =
     s.pendingWithdrawals;
+}
+
+/* =========================
+   MAINTENANCE
+========================= */
+
+let maintenanceMode = false;
+
+function createMaintenanceControl() {
+  addAdminExtraStyles();
+
+  if (
+    $("#watchsaveMaintenanceControl")
+  ) {
+    return;
+  }
+
+  /*
+    Put the control into the existing
+    admin topbar when possible.
+  */
+
+  const topbar =
+    document.querySelector(
+      ".topbar",
+    );
+
+  if (!topbar) {
+    return;
+  }
+
+  const control =
+    document.createElement("div");
+
+  control.id =
+    "watchsaveMaintenanceControl";
+
+  control.className =
+    "ws-maintenance-control";
+
+  control.innerHTML = `
+    <span
+      id="watchsaveMaintenanceStatus"
+      class="ws-maintenance-status"
+    >
+      Checking site...
+    </span>
+
+    <button
+      id="watchsaveMaintenanceBtn"
+      class="ws-maintenance-btn"
+      type="button"
+    >
+      Maintenance
+    </button>
+  `;
+
+  topbar.appendChild(control);
+
+  $("#watchsaveMaintenanceBtn").onclick =
+    toggleMaintenance;
+}
+
+async function loadMaintenance() {
+  try {
+    const d = await api(
+      "/api/admin/maintenance",
+    );
+
+    maintenanceMode =
+      !!d.maintenance;
+
+    updateMaintenanceUI();
+  } catch (e) {
+    console.warn(
+      "Could not load maintenance state:",
+      e,
+    );
+  }
+}
+
+function updateMaintenanceUI() {
+  const btn =
+    $("#watchsaveMaintenanceBtn");
+
+  const status =
+    $("#watchsaveMaintenanceStatus");
+
+  if (!btn || !status) {
+    return;
+  }
+
+  if (maintenanceMode) {
+    btn.textContent =
+      "Release / Resume";
+
+    btn.classList.add(
+      "active",
+    );
+
+    status.textContent =
+      "Site is on hold";
+
+    status.style.color =
+      "#ff9a3d";
+  } else {
+    btn.textContent =
+      "Put Site on Hold";
+
+    btn.classList.remove(
+      "active",
+    );
+
+    status.textContent =
+      "Site is live";
+
+    status.style.color =
+      "#65d99b";
+  }
+}
+
+async function toggleMaintenance() {
+  const newState =
+    !maintenanceMode;
+
+  const message =
+    newState
+      ? "Put Watchsave into maintenance mode? Normal users will be unable to watch, claim rewards, or withdraw until you release the site."
+      : "Release Watchsave from maintenance mode and allow users to continue?";
+
+  if (!confirm(message)) {
+    return;
+  }
+
+  const btn =
+    $("#watchsaveMaintenanceBtn");
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent =
+      "Updating...";
+  }
+
+  try {
+    const d = await api(
+      "/api/admin/maintenance",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify({
+          enabled: newState,
+        }),
+      },
+    );
+
+    maintenanceMode =
+      !!d.maintenance;
+
+    updateMaintenanceUI();
+
+    toast(
+      maintenanceMode
+        ? "Watchsave is now on maintenance hold."
+        : "Watchsave has been released.",
+    );
+  } catch (e) {
+    toast(
+      e.message,
+      false,
+    );
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+    }
+
+    updateMaintenanceUI();
+  }
 }
 
 /* =========================
@@ -345,6 +799,453 @@ window.delVideo =
   };
 
 /* =========================
+   USER MODALS
+========================= */
+
+let moneyModalUser = null;
+let moneyModalAction = null;
+
+function createMoneyModal() {
+  if ($("#watchsaveMoneyModal")) {
+    return;
+  }
+
+  addAdminExtraStyles();
+
+  const modal =
+    document.createElement("div");
+
+  modal.id =
+    "watchsaveMoneyModal";
+
+  modal.className =
+    "ws-modal-overlay";
+
+  modal.innerHTML = `
+    <div class="ws-modal-card">
+
+      <h2 id="wsMoneyTitle">
+        Adjust balance
+      </h2>
+
+      <p id="wsMoneyDescription">
+        Adjust this user's balance.
+      </p>
+
+      <label>
+        Amount
+      </label>
+
+      <input
+        id="wsMoneyAmount"
+        type="number"
+        min="0.01"
+        step="0.01"
+        placeholder="5000"
+      >
+
+      <label>
+        Reason
+      </label>
+
+      <textarea
+        id="wsMoneyReason"
+        rows="3"
+        maxlength="250"
+        placeholder="Admin adjustment"
+      ></textarea>
+
+      <div class="ws-modal-actions">
+
+        <button
+          id="wsMoneyCancel"
+          class="ws-modal-cancel"
+          type="button"
+        >
+          Cancel
+        </button>
+
+        <button
+          id="wsMoneyConfirm"
+          class="ws-modal-confirm"
+          type="button"
+        >
+          Confirm
+        </button>
+
+      </div>
+
+    </div>
+  `;
+
+  document.body.appendChild(
+    modal,
+  );
+
+  $("#wsMoneyCancel").onclick =
+    closeMoneyModal;
+
+  $("#wsMoneyConfirm").onclick =
+    submitMoneyAdjustment;
+
+  modal.onclick = (e) => {
+    if (
+      e.target === modal
+    ) {
+      closeMoneyModal();
+    }
+  };
+}
+
+function openMoneyModal(
+  userId,
+  action,
+) {
+  createMoneyModal();
+
+  const modal =
+    $("#watchsaveMoneyModal");
+
+  const amount =
+    $("#wsMoneyAmount");
+
+  const reason =
+    $("#wsMoneyReason");
+
+  const title =
+    $("#wsMoneyTitle");
+
+  const description =
+    $("#wsMoneyDescription");
+
+  const confirmButton =
+    $("#wsMoneyConfirm");
+
+  const targetUser =
+    window.__watchsaveUsers?.find(
+      (u) =>
+        String(u.id) ===
+        String(userId),
+    );
+
+  if (!targetUser) {
+    toast(
+      "User not found.",
+      false,
+    );
+
+    return;
+  }
+
+  moneyModalUser =
+    targetUser;
+
+  moneyModalAction =
+    action;
+
+  amount.value = "";
+  reason.value =
+    "Admin adjustment";
+
+  if (action === "add") {
+    title.textContent =
+      "Add money";
+
+    description.textContent =
+      `${targetUser.name} currently has ${money(
+        targetUser.balance,
+      )}. Enter the amount to add.`;
+
+    confirmButton.textContent =
+      "Add Money";
+
+    confirmButton.classList.remove(
+      "danger",
+    );
+  } else {
+    title.textContent =
+      "Remove money";
+
+    description.textContent =
+      `${targetUser.name} currently has ${money(
+        targetUser.balance,
+      )}. Enter the amount to remove.`;
+
+    confirmButton.textContent =
+      "Remove Money";
+
+    confirmButton.classList.add(
+      "danger",
+    );
+  }
+
+  modal.classList.add(
+    "show",
+  );
+
+  setTimeout(
+    () =>
+      amount.focus(),
+    50,
+  );
+}
+
+function closeMoneyModal() {
+  const modal =
+    $("#watchsaveMoneyModal");
+
+  if (modal) {
+    modal.classList.remove(
+      "show",
+    );
+  }
+
+  moneyModalUser = null;
+  moneyModalAction = null;
+}
+
+async function submitMoneyAdjustment() {
+  if (
+    !moneyModalUser ||
+    !moneyModalAction
+  ) {
+    return;
+  }
+
+  const amountInput =
+    $("#wsMoneyAmount");
+
+  const reasonInput =
+    $("#wsMoneyReason");
+
+  const button =
+    $("#wsMoneyConfirm");
+
+  const amount =
+    Number(amountInput.value);
+
+  const reason =
+    reasonInput.value.trim() ||
+    "Admin adjustment";
+
+  if (
+    !Number.isFinite(amount) ||
+    amount <= 0
+  ) {
+    toast(
+      "Enter a valid amount.",
+      false,
+    );
+
+    return;
+  }
+
+  if (
+    moneyModalAction ===
+      "remove" &&
+    amount >
+      Number(
+        moneyModalUser.balance ||
+          0,
+      )
+  ) {
+    toast(
+      "You cannot remove more than the user's current balance.",
+      false,
+    );
+
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent =
+    "Processing...";
+
+  try {
+    const endpoint =
+      moneyModalAction ===
+      "add"
+        ? `/api/admin/users/${encodeURIComponent(
+            moneyModalUser.id,
+          )}/add-money`
+        : `/api/admin/users/${encodeURIComponent(
+            moneyModalUser.id,
+          )}/remove-money`;
+
+    const d = await api(
+      endpoint,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify({
+          amount,
+          reason,
+        }),
+      },
+    );
+
+    closeMoneyModal();
+
+    toast(
+      d.message ||
+        "Balance updated successfully.",
+    );
+
+    await users();
+  } catch (e) {
+    toast(
+      e.message,
+      false,
+    );
+  } finally {
+    button.disabled = false;
+  }
+}
+
+window.openAddMoney =
+  (id) =>
+    openMoneyModal(
+      id,
+      "add",
+    );
+
+window.openRemoveMoney =
+  (id) =>
+    openMoneyModal(
+      id,
+      "remove",
+    );
+
+/* =========================
+   BALANCE HISTORY
+========================= */
+
+async function toggleBalanceHistory(
+  userId,
+) {
+  const container =
+    document.querySelector(
+      `.balance-history[data-user="${userId}"]`,
+    );
+
+  if (!container) {
+    return;
+  }
+
+  if (
+    container.classList.contains(
+      "open",
+    )
+  ) {
+    container.classList.remove(
+      "open",
+    );
+
+    return;
+  }
+
+  container.innerHTML =
+    '<small>Loading balance history...</small>';
+
+  container.classList.add(
+    "open",
+  );
+
+  try {
+    const d = await api(
+      `/api/admin/users/${encodeURIComponent(
+        userId,
+      )}/balance-history`,
+    );
+
+    const history =
+      d.history || [];
+
+    if (!history.length) {
+      container.innerHTML =
+        '<small>No balance adjustments yet.</small>';
+
+      return;
+    }
+
+    container.innerHTML =
+      history
+        .map(
+          (h) => {
+            const positive =
+              h.direction ===
+              "add";
+
+            return `
+              <div class="ws-history-item">
+
+                <div>
+                  <strong>
+                    ${esc(
+                      h.userName ||
+                        "",
+                    )}
+                  </strong>
+
+                  <small>
+                    ${esc(
+                      h.reason ||
+                        "Admin adjustment",
+                    )}
+                  </small>
+
+                  <small>
+                    ${new Date(
+                      h.createdAt,
+                    ).toLocaleString()}
+                  </small>
+
+                  <small>
+                    Admin:
+                    ${esc(
+                      h.adminName ||
+                        "Admin",
+                    )}
+                  </small>
+                </div>
+
+                <strong
+                  class="${
+                    positive
+                      ? "ws-history-positive"
+                      : "ws-history-negative"
+                  }"
+                >
+                  ${
+                    positive
+                      ? "+"
+                      : "-"
+                  }${money(
+                    h.amount,
+                  )}
+                </strong>
+
+              </div>
+            `;
+          },
+        )
+        .join("");
+  } catch (e) {
+    container.innerHTML =
+      `<small>${esc(
+        e.message ||
+          "Could not load balance history.",
+      )}</small>`;
+  }
+}
+
+window.toggleBalanceHistory =
+  toggleBalanceHistory;
+
+/* =========================
    USERS
 ========================= */
 
@@ -353,12 +1254,16 @@ async function users() {
     "/api/admin/users",
   );
 
+  window.__watchsaveUsers =
+    d.users || [];
+
   $("#usersList").innerHTML =
     d.users.length
       ? d.users
           .map(
             (u) =>
               `<div class="user">
+
                 <div class="avatar">
                   ${esc(
                     (
@@ -368,60 +1273,171 @@ async function users() {
                   )}
                 </div>
 
-                <div>
-                  <b>${esc(
-                    u.name,
-                  )}</b>
+                <div style="min-width:0;flex:1">
 
-                  <small>
+                  <b>
                     ${esc(
-                      u.email,
+                      u.name,
                     )}
-                    ${
-                      u.phone
-                        ? " · " +
-                          esc(
-                            u.phone,
-                          )
-                        : ""
-                    }
-                  </small>
+                  </b>
 
-                  <small>
-                    Joined:
-                    ${new Date(
-                      u.joinedAt,
-                    ).toLocaleString()}
-                    · Last login:
-                    ${
-                      u.lastLoginAt
-                        ? new Date(
-                            u.lastLoginAt,
-                          ).toLocaleString()
-                        : "Never"
-                    }
-                  </small>
+                  <div class="ws-user-grid">
+
+                    <small>
+                      Username:
+                      <strong>
+                        ${
+                          u.username
+                            ? "@" +
+                              esc(
+                                u.username,
+                              )
+                            : "Not set"
+                        }
+                      </strong>
+                    </small>
+
+                    <small>
+                      Email:
+                      ${esc(
+                        u.email,
+                      )}
+                    </small>
+
+                    <small>
+                      Phone:
+                      ${
+                        u.phone
+                          ? esc(
+                              u.phone,
+                            )
+                          : "Not supplied"
+                      }
+                    </small>
+
+                    <small class="ws-balance">
+                      Balance:
+                      ${money(
+                        u.balance,
+                      )}
+                    </small>
+
+                    <small>
+                      Joined:
+                      ${new Date(
+                        u.joinedAt,
+                      ).toLocaleDateString()}
+                    </small>
+
+                    <small>
+                      Videos watched:
+                      <strong>
+                        ${Number(
+                          u.videosWatched ||
+                            0,
+                        )}
+                      </strong>
+                    </small>
+
+                    <small class="ws-referral">
+                      Qualified referrals:
+                      <strong>
+                        ${Number(
+                          u.qualifiedReferrals ||
+                            0,
+                        )}
+                      </strong>
+                    </small>
+
+                    <small>
+                      Referral code:
+                      ${
+                        u.referralCode
+                          ? esc(
+                              u.referralCode,
+                            )
+                          : "Not available"
+                      }
+                    </small>
+
+                    <small>
+                      Last seen:
+                      ${
+                        u.lastSeen
+                          ? new Date(
+                              u.lastSeen,
+                            ).toLocaleString()
+                          : "Never"
+                      }
+                    </small>
+
+                    <small>
+                      Last login:
+                      ${
+                        u.lastLoginAt
+                          ? new Date(
+                              u.lastLoginAt,
+                            ).toLocaleString()
+                          : "Never"
+                      }
+                    </small>
+
+                  </div>
+
+                  <div class="ws-user-actions">
+
+                    <span
+                      class="status ${
+                        u.online
+                          ? "on"
+                          : "off"
+                      }"
+                    >
+                      ●
+                      ${
+                        u.online
+                          ? "Online"
+                          : "Offline"
+                      }
+                    </span>
+
+                    <button
+                      class="mini ws-money-add"
+                      onclick="openAddMoney('${u.id}')"
+                    >
+                      + Add Money
+                    </button>
+
+                    <button
+                      class="mini ws-money-remove"
+                      onclick="openRemoveMoney('${u.id}')"
+                    >
+                      − Remove Money
+                    </button>
+
+                    <button
+                      class="mini"
+                      onclick="toggleBalanceHistory('${u.id}')"
+                    >
+                      Balance History
+                    </button>
+
+                    <button
+                      class="mini danger"
+                      onclick="kick('${u.id}')"
+                    >
+                      Remove account
+                    </button>
+
+                  </div>
+
+                  <div
+                    class="ws-history balance-history"
+                    data-user="${u.id}"
+                  ></div>
+
                 </div>
 
-                <span class="status ${
-                  u.online
-                    ? "on"
-                    : "off"
-                }">
-                  ●
-                  ${
-                    u.online
-                      ? "Online"
-                      : "Offline"
-                  }
-                </span>
-
-                <button
-                  class="mini danger"
-                  onclick="kick('${u.id}')"
-                >
-                  Remove account
-                </button>
               </div>`,
           )
           .join("")
@@ -854,10 +1870,6 @@ $("#uploadForm").onsubmit =
     const file =
       fileInput?.files?.[0];
 
-    /* --------------------------------
-       CHECK VIDEO
-    -------------------------------- */
-
     if (!file) {
       toast(
         "Please select a video first.",
@@ -866,10 +1878,6 @@ $("#uploadForm").onsubmit =
 
       return;
     }
-
-    /* --------------------------------
-       MAXIMUM 250 MB
-    -------------------------------- */
 
     const MAX_SIZE =
       250 * 1024 * 1024;
@@ -882,10 +1890,6 @@ $("#uploadForm").onsubmit =
 
       return;
     }
-
-    /* --------------------------------
-       VIDEO TYPE CHECK
-    -------------------------------- */
 
     if (
       !file.type.startsWith(
@@ -900,10 +1904,6 @@ $("#uploadForm").onsubmit =
       return;
     }
 
-    /* --------------------------------
-       PREVENT DOUBLE UPLOAD
-    -------------------------------- */
-
     if (button) {
       button.disabled = true;
       button.dataset.oldText =
@@ -917,15 +1917,6 @@ $("#uploadForm").onsubmit =
     }
 
     try {
-      /*
-        IMPORTANT:
-
-        Do NOT set Content-Type manually.
-
-        FormData automatically creates
-        the multipart/form-data boundary.
-      */
-
       const formData =
         new FormData(form);
 
@@ -936,10 +1927,6 @@ $("#uploadForm").onsubmit =
           body: formData,
         },
       );
-
-      /* --------------------------------
-         RESET FORM
-      -------------------------------- */
 
       form.reset();
 
@@ -957,17 +1944,162 @@ $("#uploadForm").onsubmit =
         "Video uploaded successfully.",
       );
 
-      /* --------------------------------
-         REFRESH VIDEO LIBRARY
-      -------------------------------- */
-
       await videos();
-
-      /* --------------------------------
-         REFRESH STATISTICS
-      -------------------------------- */
-
       await stats();
+
+async function loadReferralSettings() {
+  try {
+    const res = await fetch(
+      `${BACKEND_URL}/api/admin/referrals`,
+      {
+        credentials: "include",
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(
+        data.error ||
+          "Could not load referral settings."
+      );
+    }
+
+    const requiredInput =
+      document.getElementById(
+        "referralRequired"
+      );
+
+    const rewardInput =
+      document.getElementById(
+        "referralReward"
+      );
+
+    const info =
+      document.getElementById(
+        "referralQualificationInfo"
+      );
+
+    if (requiredInput) {
+      requiredInput.value =
+        data.requiredReferrals ?? 10;
+    }
+
+    if (rewardInput) {
+      rewardInput.value =
+        data.rewardAmount ?? 1500;
+    }
+
+    if (info) {
+      info.textContent =
+        `A referral becomes successful after the referred user reaches ₦${Number(
+          data.qualificationBalance ?? 5000
+        ).toLocaleString()} in balance.`;
+    }
+  } catch (err) {
+    console.error(
+      "REFERRAL SETTINGS LOAD ERROR:",
+      err
+    );
+  }
+}
+
+async function saveReferralSettings(event) {
+  event.preventDefault();
+
+  const requiredReferrals = Number(
+    document.getElementById(
+      "referralRequired"
+    )?.value
+  );
+
+  const rewardAmount = Number(
+    document.getElementById(
+      "referralReward"
+    )?.value
+  );
+
+  if (
+    !Number.isInteger(requiredReferrals) ||
+    requiredReferrals < 1
+  ) {
+    toast(
+      "Enter a valid number of required referrals."
+    );
+    return;
+  }
+
+  if (
+    !Number.isFinite(rewardAmount) ||
+    rewardAmount < 1
+  ) {
+    toast(
+      "Enter a valid referral reward."
+    );
+    return;
+  }
+
+  try {
+    const res = await fetch(
+      `${BACKEND_URL}/api/admin/referrals`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          requiredReferrals,
+          rewardAmount,
+        }),
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(
+        data.error ||
+          "Could not save referral settings."
+      );
+    }
+
+    toast(
+      data.message ||
+        "Referral settings saved successfully."
+    );
+
+    await loadReferralSettings();
+  } catch (err) {
+    console.error(
+      "REFERRAL SETTINGS SAVE ERROR:",
+      err
+    );
+
+    toast(
+      err.message ||
+        "Could not save referral settings."
+    );
+  }
+}
+
+document.addEventListener(
+  "DOMContentLoaded",
+  () => {
+    const form =
+      document.getElementById(
+        "referralSettingsForm"
+      );
+
+    if (form) {
+      form.addEventListener(
+        "submit",
+        saveReferralSettings
+      );
+    }
+  }
+);
 
     } catch (x) {
       console.error(
@@ -978,11 +2110,6 @@ $("#uploadForm").onsubmit =
       let message =
         x.message ||
         "Video upload failed. Please try again.";
-
-      /*
-        Give a more useful message
-        for common network problems.
-      */
 
       if (
         message
@@ -997,12 +2124,7 @@ $("#uploadForm").onsubmit =
         message,
         false,
       );
-
     } finally {
-      /* --------------------------------
-         RESTORE BUTTON
-      -------------------------------- */
-
       if (button) {
         button.disabled = false;
 
@@ -1061,8 +2183,12 @@ $("#logout").onclick =
 setInterval(() => {
   stats().catch(() => {});
 
+  loadMaintenance().catch(
+    () => {},
+  );
+
   if (
-    $("#users").classList.contains(
+    $("#users")?.classList.contains(
       "active",
     )
   ) {
@@ -1070,7 +2196,7 @@ setInterval(() => {
   }
 
   if (
-    $("#chats").classList.contains(
+    $("#chats")?.classList.contains(
       "active",
     )
   ) {
@@ -1084,6 +2210,10 @@ setInterval(() => {
 
 (async () => {
   try {
+    addAdminExtraStyles();
+    createMoneyModal();
+    createMaintenanceControl();
+
     const m = await api(
       "/api/auth/me",
     );
@@ -1098,7 +2228,163 @@ setInterval(() => {
     }
 
     await stats();
+
+async function loadReferralSettings() {
+  try {
+    const res = await fetch(
+      `${BACKEND_URL}/api/admin/referrals`,
+      {
+        credentials: "include",
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(
+        data.error ||
+          "Could not load referral settings."
+      );
+    }
+
+    const requiredInput =
+      document.getElementById(
+        "referralRequired"
+      );
+
+    const rewardInput =
+      document.getElementById(
+        "referralReward"
+      );
+
+    const info =
+      document.getElementById(
+        "referralQualificationInfo"
+      );
+
+    if (requiredInput) {
+      requiredInput.value =
+        data.requiredReferrals ?? 10;
+    }
+
+    if (rewardInput) {
+      rewardInput.value =
+        data.rewardAmount ?? 1500;
+    }
+
+    if (info) {
+      info.textContent =
+        `A referral becomes successful after the referred user reaches ₦${Number(
+          data.qualificationBalance ?? 5000
+        ).toLocaleString()} in balance.`;
+    }
+  } catch (err) {
+    console.error(
+      "REFERRAL SETTINGS LOAD ERROR:",
+      err
+    );
+  }
+}
+
+async function saveReferralSettings(event) {
+  event.preventDefault();
+
+  const requiredReferrals = Number(
+    document.getElementById(
+      "referralRequired"
+    )?.value
+  );
+
+  const rewardAmount = Number(
+    document.getElementById(
+      "referralReward"
+    )?.value
+  );
+
+  if (
+    !Number.isInteger(requiredReferrals) ||
+    requiredReferrals < 1
+  ) {
+    toast(
+      "Enter a valid number of required referrals."
+    );
+    return;
+  }
+
+  if (
+    !Number.isFinite(rewardAmount) ||
+    rewardAmount < 1
+  ) {
+    toast(
+      "Enter a valid referral reward."
+    );
+    return;
+  }
+
+  try {
+    const res = await fetch(
+      `${BACKEND_URL}/api/admin/referrals`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          requiredReferrals,
+          rewardAmount,
+        }),
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(
+        data.error ||
+          "Could not save referral settings."
+      );
+    }
+
+    toast(
+      data.message ||
+        "Referral settings saved successfully."
+    );
+
+    await loadReferralSettings();
+  } catch (err) {
+    console.error(
+      "REFERRAL SETTINGS SAVE ERROR:",
+      err
+    );
+
+    toast(
+      err.message ||
+        "Could not save referral settings."
+    );
+  }
+}
+
+document.addEventListener(
+  "DOMContentLoaded",
+  () => {
+    const form =
+      document.getElementById(
+        "referralSettingsForm"
+      );
+
+    if (form) {
+      form.addEventListener(
+        "submit",
+        saveReferralSettings
+      );
+    }
+  }
+);
+
     await videos();
+    await loadMaintenance();
 
   } catch (e) {
     console.error(
