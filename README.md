@@ -6,7 +6,9 @@ Open `http://localhost:3000`.
 Admin: `http://localhost:3000/admin.html`
 
 Default admin email: `admin@watchsave.local`
-Default admin password: `WatchsaveAdmin123!`
+
+<!-- redeploy -->
+
 Change the admin credentials and JWT secret in `.env` before real deployment.
 
 ## What changed
